@@ -891,7 +891,7 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
           <label>Colaborador</label>
           <select value={filtroColab} onChange={e=>setFiltroColab(e.target.value)} style={{marginBottom:14}}>
             <option value="todos">Todos los colaboradores</option>
-            {colaboradores.map(c=><option key={c.correo} value={c.correo}>{c.nombre} {c.apellido}</option>)}
+            {colaboradores.filter(c=>c.tipo==="Colaborador de campo").map(c=><option key={c.correo} value={c.correo}>{c.nombre} {c.apellido}</option>)}
           </select>
           <label>Periodo</label>
           <div className="pill-group">{[["dia","Día"],["semana","Semana"],["mes","Mes"],["anio","Año"],["personalizado","Rango de fechas"]].map(([k,l])=>(<button key={k} className={"pill "+(filtroFecha===k?"active":"")} onClick={()=>setFiltroFecha(k)}>{l}</button>))}</div>
