@@ -841,10 +841,22 @@ function AdminHome({queue, colaboradores, online}){
 function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefreshRemote}){
   const [filtroColab, setFiltroColab] = useState("todos");
   const [filtroFecha, setFiltroFecha] = useState("mes");
+  const [rangoDesde, setRangoDesde] = useState("");
+  const [rangoHasta, setRangoHasta] = useState("");
   const nombreDe = (correo)=>{ const c = colaboradores.find(x=>x.correo===correo); return c ? (c.nombre+" "+c.apellido) : null; };
   const nombreFiltro = filtroColab==="todos" ? null : nombreDe(filtroColab);
-  const filtrados = queue.filter(r=>(filtroColab==="todos"||r.nombreColaborador===nombreFiltro) && inRange(r.fechaCaptacion, filtroFecha));
+  const enRangoPersonalizado = (fecha)=>{
+    if(!rangoDesde && !rangoHasta) return true;
+    if(rangoDesde && fecha < rangoDesde) return false;
+    if(rangoHasta && fecha > rangoHasta) return false;
+    return true;
+  };
+  const cumpleFecha = (r)=> filtroFecha==="personalizado" ? enRangoPersonalizado(r.fechaCaptacion) : inRange(r.fechaCaptacion, filtroFecha);
+  const filtrados = queue.filter(r=>(filtroColab==="todos"||r.nombreColaborador===nombreFiltro) && cumpleFecha(r));
   const total = filtrados.reduce((s,r)=>s+Number(r.cantidad||0),0);
+  const etiquetaPeriodo = filtroFecha==="personalizado"
+    ? (rangoDesde||rangoHasta ? ((rangoDesde||"…") + " a " + (rangoHasta||"…")) : "todo el historial")
+    : filtroFecha;
 
   const descargarInforme = ()=>{
     const headers = ["Número de autorización única de débito","Nombre de Colaborador","Fecha de Captación","Lugar de Captación","Nombre Donador","Cédula de Donador","Email","Teléfono","Celular","Fecha de nacimiento","Dirección","Número cuenta bancaria","Banco","Ahorros/Corriente","Número de tarjeta","Nombre de Titular","Fecha de expiración","Frecuencia de débito","Cantidad a debitar","Aceptación"];
@@ -870,7 +882,7 @@ function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefresh
       <Header title="Reportes" subtitle="Filtra y exporta la captación" online={online} showConn/>
       <div className="content">
         <div className="stat-card">
-          <div className="stat-label">Total ({filtroFecha})</div>
+          <div className="stat-label">Total ({etiquetaPeriodo})</div>
           <div className="stat-value">{fmtMoney(total)}</div>
           <div className="stat-sub">{filtrados.length} donaciones</div>
         </div>
@@ -882,7 +894,19 @@ function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefresh
             {colaboradores.map(c=><option key={c.correo} value={c.correo}>{c.nombre} {c.apellido}</option>)}
           </select>
           <label>Periodo</label>
-          <div className="pill-group">{[["dia","Día"],["semana","Semana"],["mes","Mes"],["anio","Año"]].map(([k,l])=>(<button key={k} className={"pill "+(filtroFecha===k?"active":"")} onClick={()=>setFiltroFecha(k)}>{l}</button>))}</div>
+          <div className="pill-group">{[["dia","Día"],["semana","Semana"],["mes","Mes"],["anio","Año"],["personalizado","Rango de fechas"]].map(([k,l])=>(<button key={k} className={"pill "+(filtroFecha===k?"active":"")} onClick={()=>setFiltroFecha(k)}>{l}</button>))}</div>
+          {filtroFecha==="personalizado" && (
+            <div className="row2" style={{marginTop:12}}>
+              <div className="field">
+                <label>Desde</label>
+                <input type="date" value={rangoDesde} onChange={e=>setRangoDesde(e.target.value)}/>
+              </div>
+              <div className="field">
+                <label>Hasta</label>
+                <input type="date" value={rangoHasta} onChange={e=>setRangoHasta(e.target.value)}/>
+              </div>
+            </div>
+          )}
         </div>
         <div className="fab-space"><button className="btn btn-gold" onClick={descargarInforme}><IconDownload/> Descargar informe (Excel)</button></div>
         <div style={{display:"flex", gap:10, marginTop:12}}>
