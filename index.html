@@ -90,12 +90,10 @@
 
   .seal-badge{
     width:84px;height:84px;border-radius:50%;margin:0 auto 16px;
-    background:radial-gradient(circle at 35% 30%, #fff, var(--gold) 85%);
-    display:flex;align-items:center;justify-content:center;position:relative;
-    box-shadow:0 8px 22px rgba(227,166,47,0.4);
+    overflow:hidden;box-shadow:0 8px 22px rgba(18,58,92,0.35);
+    background:#1289A7;
   }
-  .seal-badge::before{content:'';position:absolute;inset:6px;border-radius:50%;border:2px dashed rgba(255,255,255,0.7);}
-  .seal-badge span{font-family:var(--font-display);color:var(--navy);font-weight:700;font-size:20px;}
+  .seal-badge img{width:100%;height:100%;object-fit:cover;display:block;}
 
   .card{
     background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
@@ -133,6 +131,7 @@
   .btn-primary:disabled{background:#B7C7D4;box-shadow:none;cursor:not-allowed;}
   .btn-gold{background:var(--gold);color:#fff;box-shadow:0 6px 16px rgba(227,166,47,0.4);}
   .btn-ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue);}
+  .btn-text{background:none;border:none;color:var(--blue);font-weight:700;cursor:pointer;font-size:14px;padding:8px;text-decoration:underline;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 
   .section-title{
@@ -249,7 +248,7 @@ const BANCOS_ECUADOR = [
   "Banco Coopnacional S.A.", "Banco D-Miro S.A.", "Banco del Litoral S.A.",
   "Banco Capital S.A.", "Banco Desarrollo de los Pueblos S.A.",
   "Banco para la Asistencia Comunitaria Finca S.A.", "Diners Club del Ecuador S.A.",
-  "Citibank N.A. Sucursal Ecuador",
+  "Citibank N.A. Sucursal Ecuador", "Otro",
 ];
 const MONTOS_SUGERIDOS = [10, 15, 20, 30, 50];
 
@@ -299,7 +298,7 @@ const IconStar = (p)=>(<svg width="16" height="16" viewBox="0 0 24 24" fill="cur
 const IconDownload = (p)=>(<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>);
 const IconInstall = (p)=>(<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg>);
 
-function Seal({size=84}){ return <div className="seal-badge" style={{width:size,height:size}}><span>SJD</span></div>; }
+function Seal({size=84}){ return <div className="seal-badge" style={{width:size,height:size}}><img src="./logo.png" alt="Orden Hospitalaria San Juan de Dios"/></div>; }
 
 function Header({title, subtitle, eyebrow, onBack, online, showConn}){
   return (
@@ -393,9 +392,12 @@ function Landing({goto, install}){
 function ColabAuth({goto, onLogin}){
   const [mode, setMode] = useState("login");
   const [err, setErr] = useState("");
+  const [okMsg, setOkMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({correo:"",nombre:"",apellido:"",cedula:"",celular:"",password:"",password2:"",tipo:"Colaborador de campo"});
+  const [resetForm, setResetForm] = useState({correo:"",cedula:"",password:"",password2:""});
   const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
+  const setReset = (k)=>(e)=>setResetForm(f=>({...f,[k]:e.target.value}));
 
   const doLogin = async ()=>{
     setErr(""); setLoading(true);
@@ -424,23 +426,49 @@ function ColabAuth({goto, onLogin}){
       onLogin(nuevo);
     } finally { setLoading(false); }
   };
+  const doReset = async ()=>{
+    setErr(""); setOkMsg("");
+    if(!resetForm.correo || !resetForm.cedula || !resetForm.password || !resetForm.password2){ setErr("Completa todos los campos."); return; }
+    if(resetForm.password.length < 6){ setErr("La nueva contraseña debe tener al menos 6 caracteres."); return; }
+    if(resetForm.password !== resetForm.password2){ setErr("Las contraseñas no coinciden."); return; }
+    setLoading(true);
+    try{
+      const colaboradores = await storeGet("colaboradores", []);
+      const idx = colaboradores.findIndex(c=>c.correo.toLowerCase()===resetForm.correo.toLowerCase() && c.cedula===resetForm.cedula);
+      if(idx===-1){
+        setErr("No se encontró una cuenta con ese correo y cédula en este dispositivo. Si te registraste desde otro celular, restablece la contraseña desde ese mismo dispositivo.");
+        setLoading(false); return;
+      }
+      const passwordHash = await sha256(resetForm.password);
+      const actualizados = colaboradores.map((c,i)=> i===idx ? {...c, passwordHash} : c);
+      await storeSet("colaboradores", actualizados);
+      setOkMsg("Contraseña actualizada. Ya puedes iniciar sesión.");
+      setResetForm({correo:"",cedula:"",password:"",password2:""});
+      setMode("login");
+    } finally { setLoading(false); }
+  };
 
   return (
     <div>
-      <Header title="Acceso Colaborador" onBack={()=>goto("landing")}/>
+      <Header title={mode==="reset" ? "Restablecer contraseña" : "Acceso Colaborador"} onBack={()=>mode==="reset" ? setMode("login") : goto("landing")}/>
       <div className="content no-nav">
-        <div className="toggle-tabs">
-          <button className={mode==="login"?"active":""} onClick={()=>{setMode("login"); setErr("");}}>Iniciar sesión</button>
-          <button className={mode==="registro"?"active":""} onClick={()=>{setMode("registro"); setErr("");}}>Registrarme</button>
-        </div>
+        {mode!=="reset" && (
+          <div className="toggle-tabs">
+            <button className={mode==="login"?"active":""} onClick={()=>{setMode("login"); setErr(""); setOkMsg("");}}>Iniciar sesión</button>
+            <button className={mode==="registro"?"active":""} onClick={()=>{setMode("registro"); setErr(""); setOkMsg("");}}>Registrarme</button>
+          </div>
+        )}
         {err && <div className="error-msg">{err}</div>}
-        {mode==="login" ? (
+        {okMsg && <div className="cashback-banner" style={{marginTop:0, marginBottom:16}}><IconStar/> {okMsg}</div>}
+        {mode==="login" && (
           <div className="card stack">
             <div className="field"><label className="req">Correo institucional</label><input type="email" value={form.correo} onChange={set("correo")} placeholder="nombre@sanjuandedios.ec"/></div>
             <div className="field"><label className="req">Contraseña</label><input type="password" value={form.password} onChange={set("password")}/></div>
             <button className="btn btn-primary" disabled={loading} onClick={doLogin}>{loading?"Ingresando…":"Ingresar"}</button>
+            <button type="button" className="btn-text" style={{alignSelf:"center"}} onClick={()=>{setMode("reset"); setErr(""); setOkMsg(""); setResetForm(f=>({...f, correo:form.correo}));}}>¿Olvidaste tu contraseña? Restablécela aquí</button>
           </div>
-        ) : (
+        )}
+        {mode==="registro" && (
           <div className="card stack">
             <div className="field">
               <label>Tipo de colaborador</label>
@@ -464,6 +492,18 @@ function ColabAuth({goto, onLogin}){
               <div className="field"><label className="req">Confirmar</label><input type="password" value={form.password2} onChange={set("password2")}/></div>
             </div>
             <button className="btn btn-primary" disabled={loading} onClick={doRegistro}>{loading?"Creando cuenta…":"Crear cuenta"}</button>
+          </div>
+        )}
+        {mode==="reset" && (
+          <div className="card stack">
+            <p className="hint" style={{marginBottom:4}}>Confirma tu correo y cédula para crear una nueva contraseña.</p>
+            <div className="field"><label className="req">Correo institucional</label><input type="email" value={resetForm.correo} onChange={setReset("correo")} placeholder="nombre@sanjuandedios.ec"/></div>
+            <div className="field"><label className="req">Cédula</label><input type="text" inputMode="numeric" value={resetForm.cedula} onChange={setReset("cedula")}/></div>
+            <div className="row2">
+              <div className="field"><label className="req">Nueva contraseña</label><input type="password" value={resetForm.password} onChange={setReset("password")}/></div>
+              <div className="field"><label className="req">Confirmar</label><input type="password" value={resetForm.password2} onChange={setReset("password2")}/></div>
+            </div>
+            <button className="btn btn-primary" disabled={loading} onClick={doReset}>{loading?"Actualizando…":"Restablecer contraseña"}</button>
           </div>
         )}
         <p className="footnote">Datos guardados de forma local en este dispositivo para fines del prototipo.</p>
@@ -515,7 +555,7 @@ function UsuarioRegistro({goto}){
 
 /* ========================= Home Colaborador ========================= */
 function ColabHome({session, goto, queue, online}){
-  const misRegistros = queue.filter(r=>r.colaboradorId===session.id);
+  const misRegistros = queue.filter(r=>r.colaboradorId===session.id || r.nombreColaborador===(session.nombre+" "+session.apellido));
   const totalMes = misRegistros.filter(r=>inRange(r.fechaCaptacion,"mes")).reduce((s,r)=>s+Number(r.cantidad||0),0);
   const pendientes = misRegistros.filter(r=>r.status==="pending").length;
   return (
@@ -548,7 +588,7 @@ function ColabHome({session, goto, queue, online}){
 }
 
 function ColabHistorial({session, goto, queue, online, syncing, onSync}){
-  const misRegistros = queue.filter(r=>r.colaboradorId===session.id).slice().reverse();
+  const misRegistros = queue.filter(r=>r.colaboradorId===session.id || r.nombreColaborador===(session.nombre+" "+session.apellido)).slice().reverse();
   return (
     <div>
       <Header title="Historial" subtitle="Todos tus registros" online={online} showConn/>
@@ -594,7 +634,7 @@ function CuentaScreen({session, goto, onLogout, install}){
 /* ========================= Nueva Donación ========================= */
 const CAMPOS_INICIALES = {
   nombreDonador:"",cedulaDonador:"",email:"",telefono:"",celular:"",fechaNacimiento:"",direccion:"",
-  numeroCuenta:"",banco:"",tipoCuenta:"",nombreTitular:"",numeroTarjeta:"",fechaExpiracion:"",
+  numeroCuenta:"",banco:"",bancoOtro:"",tipoCuenta:"",nombreTitular:"",numeroTarjeta:"",fechaExpiracion:"",
   frecuencia:"mensual",cantidad:"",cantidadOtro:"",lugar:"",nota:"",acepta:false,
 };
 
@@ -606,10 +646,13 @@ function NuevaDonacion({session, goto, onGuardado}){
   const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
   const bancosFiltrados = BANCOS_ECUADOR.filter(b=>b.toLowerCase().includes(bankQuery.toLowerCase()));
   const montoFinal = form.cantidad==="otro" ? form.cantidadOtro : form.cantidad;
-  const requeridos = ["nombreDonador","cedulaDonador","celular","fechaNacimiento","direccion","numeroCuenta","banco","tipoCuenta","nombreTitular","numeroTarjeta","fechaExpiracion"];
+  const bancoFinal = form.banco==="Otro" ? form.bancoOtro.trim() : form.banco;
+  const requeridos = ["nombreDonador","cedulaDonador","celular","fechaNacimiento","direccion","numeroCuenta","tipoCuenta","nombreTitular","numeroTarjeta"];
 
   const validar = ()=>{
     for(const k of requeridos){ if(!form[k]) return "Falta completar un campo obligatorio."; }
+    if(!bancoFinal) return "Selecciona o escribe el nombre del banco.";
+    if(!/^(0[1-9]|1[0-2])\/\d{2}$/.test(form.fechaExpiracion)) return "La fecha de expiración debe tener el formato MM/AA (ej. 09/28).";
     if(!montoFinal) return "Selecciona o ingresa el monto a debitar.";
     if(!form.acepta) return "Debes marcar la casilla de autorización para continuar.";
     return "";
@@ -620,11 +663,11 @@ function NuevaDonacion({session, goto, onGuardado}){
     if(problema){ setErr(problema); window.scrollTo({top:0, behavior:"smooth"}); return; }
     setErr("");
     const registro = {
-      id:uid("don"), numeroAutorizacion:genAutorizacion(), colaboradorId:session.id,
+      id:uid("don"), numeroAutorizacion:"", colaboradorId:session.id,
       nombreColaborador:session.nombre+" "+session.apellido, fechaCaptacion:todayISO(),
       lugarCaptacion:form.lugar, nombreDonador:form.nombreDonador, cedulaDonador:form.cedulaDonador,
       email:form.email, telefono:form.telefono, celular:form.celular, fechaNacimiento:form.fechaNacimiento,
-      direccion:form.direccion, numeroCuenta:form.numeroCuenta, banco:form.banco, tipoCuenta:form.tipoCuenta,
+      direccion:form.direccion, numeroCuenta:form.numeroCuenta, banco:bancoFinal, tipoCuenta:form.tipoCuenta,
       numeroTarjeta:form.numeroTarjeta, nombreTitular:form.nombreTitular, fechaExpiracion:form.fechaExpiracion,
       frecuencia:form.frecuencia, cantidad:montoFinal, nota:form.nota, aceptacion:"Sí", status:"pending",
     };
@@ -658,7 +701,12 @@ function NuevaDonacion({session, goto, onGuardado}){
           <div className="field">
             <label className="req">Banco</label>
             {form.banco ? (
-              <div className="bank-selected">{form.banco}<button onClick={()=>setForm(f=>({...f,banco:""}))}>Cambiar</button></div>
+              <div className="stack">
+                <div className="bank-selected">{form.banco}<button onClick={()=>setForm(f=>({...f,banco:"",bancoOtro:""}))}>Cambiar</button></div>
+                {form.banco==="Otro" && (
+                  <input type="text" placeholder="Escribe el nombre del banco" value={form.bancoOtro} onChange={set("bancoOtro")}/>
+                )}
+              </div>
             ) : (
               <div className="bank-search">
                 <input type="text" placeholder="Buscar banco…" value={bankQuery} onFocus={()=>setBankOpen(true)} onChange={e=>{setBankQuery(e.target.value); setBankOpen(true);}}/>
@@ -678,7 +726,16 @@ function NuevaDonacion({session, goto, onGuardado}){
           <div className="field"><label className="req">Nombre en la tarjeta (titular)</label><input type="text" value={form.nombreTitular} onChange={set("nombreTitular")}/></div>
           <div className="row2">
             <div className="field"><label className="req">Número de tarjeta</label><input type="text" inputMode="numeric" value={form.numeroTarjeta} onChange={set("numeroTarjeta")}/></div>
-            <div className="field"><label className="req">Fecha de expiración</label><input type="date" value={form.fechaExpiracion} onChange={set("fechaExpiracion")}/></div>
+            <div className="field">
+              <label className="req">Fecha de expiración</label>
+              <input type="text" inputMode="numeric" placeholder="MM/AA" maxLength="5" value={form.fechaExpiracion}
+                onChange={e=>{
+                  let v = e.target.value.replace(/[^0-9]/g,"").slice(0,4);
+                  if(v.length>=3) v = v.slice(0,2) + "/" + v.slice(2);
+                  setForm(f=>({...f, fechaExpiracion:v}));
+                }}/>
+              <div className="hint">Ej. 09/28 = septiembre 2028</div>
+            </div>
           </div>
         </div>
 
@@ -774,13 +831,25 @@ function AdminHome({queue, colaboradores, online}){
 function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefreshRemote}){
   const [filtroColab, setFiltroColab] = useState("todos");
   const [filtroFecha, setFiltroFecha] = useState("mes");
-  const filtrados = queue.filter(r=>(filtroColab==="todos"||r.colaboradorId===filtroColab) && inRange(r.fechaCaptacion, filtroFecha));
+  const nombreDe = (correo)=>{ const c = colaboradores.find(x=>x.correo===correo); return c ? (c.nombre+" "+c.apellido) : null; };
+  const nombreFiltro = filtroColab==="todos" ? null : nombreDe(filtroColab);
+  const filtrados = queue.filter(r=>(filtroColab==="todos"||r.nombreColaborador===nombreFiltro) && inRange(r.fechaCaptacion, filtroFecha));
   const total = filtrados.reduce((s,r)=>s+Number(r.cantidad||0),0);
 
   const descargarInforme = ()=>{
     const headers = ["Número de autorización única de débito","Nombre de Colaborador","Fecha de Captación","Lugar de Captación","Nombre Donador","Cédula de Donador","Email","Teléfono","Celular","Fecha de nacimiento","Dirección","Número cuenta bancaria","Banco","Ahorros/Corriente","Número de tarjeta","Nombre de Titular","Fecha de expiración","Frecuencia de débito","Cantidad a debitar","Aceptación"];
     const rows = filtrados.map(r=>[r.numeroAutorizacion,r.nombreColaborador,r.fechaCaptacion,r.lugarCaptacion,r.nombreDonador,r.cedulaDonador,r.email,r.telefono,r.celular,r.fechaNacimiento,r.direccion,r.numeroCuenta,r.banco,r.tipoCuenta,r.numeroTarjeta,r.nombreTitular,r.fechaExpiracion,r.frecuencia,r.cantidad,r.aceptacion]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    // Columnas con ceros a la izquierda o formato especial (A, F, H, I, L, O, Q):
+    // se fuerzan como texto para que Excel no las reinterprete como número o fecha.
+    const colsTexto = [0,5,7,8,11,14,16];
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    for(let R=1; R<=range.e.r; R++){
+      colsTexto.forEach(C=>{
+        const addr = XLSX.utils.encode_cell({r:R, c:C});
+        if(ws[addr]){ ws[addr].t = "s"; ws[addr].z = "@"; }
+      });
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Donaciones");
     XLSX.writeFile(wb, "Informe_Donaciones_" + todayISO() + ".xlsx");
@@ -800,7 +869,7 @@ function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefresh
           <label>Colaborador</label>
           <select value={filtroColab} onChange={e=>setFiltroColab(e.target.value)} style={{marginBottom:14}}>
             <option value="todos">Todos los colaboradores</option>
-            {colaboradores.map(c=><option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}
+            {colaboradores.map(c=><option key={c.correo} value={c.correo}>{c.nombre} {c.apellido}</option>)}
           </select>
           <label>Periodo</label>
           <div className="pill-group">{[["dia","Día"],["semana","Semana"],["mes","Mes"],["anio","Año"]].map(([k,l])=>(<button key={k} className={"pill "+(filtroFecha===k?"active":"")} onClick={()=>setFiltroFecha(k)}>{l}</button>))}</div>
@@ -827,22 +896,38 @@ function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefresh
   );
 }
 
-function AdminColaboradores({queue, colaboradores, online}){
-  const porColaborador = colaboradores.map(c=>{
-    const propios = queue.filter(r=>r.colaboradorId===c.id);
+function AdminColaboradores({queue, colaboradores, online, onRefreshRemote}){
+  const equipo = colaboradores.filter(c=>c.tipo==="Colaborador de campo");
+  const porColaborador = equipo.map(c=>{
+    const nombreCompleto = c.nombre+" "+c.apellido;
+    const propios = queue.filter(r=>r.nombreColaborador===nombreCompleto);
     const totalMes = propios.filter(r=>inRange(r.fechaCaptacion,"mes")).reduce((s,r)=>s+Number(r.cantidad||0),0);
-    return {...c, totalMes, cantidad: propios.length};
+    const pendientes = propios.filter(r=>r.status==="pending").length;
+    return {...c, totalMes, cantidad: propios.length, pendientes};
   });
   return (
     <div>
-      <Header title="Colaboradores" subtitle="Desempeño por persona" online={online} showConn/>
+      <Header title="Equipo" subtitle="Detalle de recolectoras en campo" online={online} showConn/>
       <div className="content">
+        <div style={{marginBottom:16}}>
+          <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar equipo desde Sheets</button>
+        </div>
         {porColaborador.length===0 ? (
-          <div className="empty-state"><Seal size={56}/><p>Todavía no hay colaboradores registrados.</p></div>
+          <div className="empty-state"><Seal size={56}/><p>Todavía no hay recolectoras registradas.<br/>Toca "Actualizar equipo desde Sheets" si ya se registraron desde otro celular.</p></div>
         ) : porColaborador.map(c=>(
-          <div className="list-row" key={c.id}>
-            <div><div className="name">{c.nombre} {c.apellido}</div><div className="meta">{c.tipo} · {c.cantidad} registros</div></div>
-            <strong style={{color:"var(--blue)"}}>{fmtMoney(c.totalMes)}</strong>
+          <div className="card" key={c.correo} style={{marginBottom:12}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+              <div>
+                <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
+                <div className="meta">{c.correo}</div>
+                <div className="meta">{c.celular} · Cédula {c.cedula}</div>
+              </div>
+              <strong style={{color:"var(--blue)", fontSize:17, whiteSpace:"nowrap"}}>{fmtMoney(c.totalMes)}</strong>
+            </div>
+            <div style={{display:"flex", gap:8, marginTop:12}}>
+              <span className="badge synced">{c.cantidad} donaciones</span>
+              {c.pendientes>0 && <span className="badge pending">{c.pendientes} pendientes</span>}
+            </div>
           </div>
         ))}
       </div>
@@ -896,11 +981,34 @@ function App(){
     (async ()=>{
       setQueue(await storeGet("donaciones_queue", []));
       setColaboradores(await storeGet("colaboradores", []));
+      if(navigator.onLine) fetchColaboradoresRemote();
     })();
     if("serviceWorker" in navigator){
       navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
     }
   },[]);
+
+  /* Trae el equipo completo desde el Google Sheets (todas las colaboradoras
+     registradas, sin importar en qué celular lo hicieron) y lo combina con
+     los datos guardados localmente (que incluyen la contraseña, la cual
+     nunca se envía ni se guarda en el servidor). */
+  const fetchColaboradoresRemote = async ()=>{
+    try{
+      const data = await apiGet({action:"listarColaboradores"});
+      if(!data.colaboradores) return;
+      const local = await storeGet("colaboradores", []);
+      const combinados = data.colaboradores.map(remoto=>{
+        const local_ = local.find(l=>l.correo.toLowerCase()===remoto.correo.toLowerCase());
+        return {...remoto, id: local_?.id || uid("col"), passwordHash: local_?.passwordHash || null};
+      });
+      // Conserva localmente cualquier colaborador aún no sincronizado (offline)
+      local.forEach(l=>{
+        if(!combinados.some(c=>c.correo.toLowerCase()===l.correo.toLowerCase())) combinados.push(l);
+      });
+      setColaboradores(combinados);
+      await storeSet("colaboradores", combinados);
+    }catch(e){ /* sin conexión o backend no configurado */ }
+  };
 
   const goto = useCallback((s)=>{ setScreen(s); window.scrollTo({top:0}); },[]);
   const onLogin = (col)=>{ setSession(col); goto(col.tipo==="Administrador" ? "admin-home" : "colab-home"); };
@@ -913,8 +1021,8 @@ function App(){
     let actualizado = currentQueue;
     for(const r of pendientes){
       try{
-        await apiPost("nuevaDonacion", {registro:r});
-        actualizado = actualizado.map(x=>x.id===r.id ? {...x, status:"synced"} : x);
+        const res = await apiPost("nuevaDonacion", {registro:r});
+        actualizado = actualizado.map(x=>x.id===r.id ? {...x, status:"synced", numeroAutorizacion: res.numeroAutorizacion || x.numeroAutorizacion} : x);
       }catch(e){ /* se reintenta luego */ }
     }
     setQueue(actualizado);
@@ -934,6 +1042,7 @@ function App(){
   const onRefreshRemote = async ()=>{
     try{ const data = await apiGet({action:"listar"}); if(data.registros) setQueue(data.registros.map(r=>({...r, status:"synced"}))); }
     catch(e){}
+    fetchColaboradoresRemote();
   };
 
   const showBottomNav = session && ["colab-home","colab-historial","admin-home","admin-reportes","admin-colaboradores","cuenta"].includes(screen);
@@ -949,7 +1058,7 @@ function App(){
       {screen==="confirmacion" && session && <Confirmacion goto={goto} session={session}/>}
       {screen==="admin-home" && session && <AdminHome queue={queue} colaboradores={colaboradores} online={online}/>}
       {screen==="admin-reportes" && session && <AdminReportes queue={queue} colaboradores={colaboradores} online={online} syncing={syncing} onSync={onSync} onRefreshRemote={onRefreshRemote}/>}
-      {screen==="admin-colaboradores" && session && <AdminColaboradores queue={queue} colaboradores={colaboradores} online={online}/>}
+      {screen==="admin-colaboradores" && session && <AdminColaboradores queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote}/>}
       {screen==="cuenta" && session && <CuentaScreen session={session} goto={goto} onLogout={onLogout} install={install}/>}
       {showBottomNav && <BottomNav role={session.tipo} screen={screen} goto={goto}/>}
     </div>
