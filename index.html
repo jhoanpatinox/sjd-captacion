@@ -602,7 +602,11 @@ function ColabHistorial({session, goto, queue, online, syncing, onSync}){
           <div className="empty-state"><Seal size={56}/><p>Todavía no hay registros aquí.</p></div>
         ) : misRegistros.map(r=>(
           <div className="list-row" key={r.id}>
-            <div><div className="name">{r.nombreDonador}</div><div className="meta">{r.fechaCaptacion} · {fmtMoney(r.cantidad)} / {r.frecuencia} · {r.lugarCaptacion||"—"}</div></div>
+            <div>
+              <div className="name">{r.nombreDonador}</div>
+              <div className="meta" style={{fontWeight:700, color:"var(--blue)"}}>{r.numeroAutorizacion || "Nº pendiente de asignar"}</div>
+              <div className="meta">{r.fechaCaptacion} · {fmtMoney(r.cantidad)} / {r.frecuencia} · {r.lugarCaptacion||"—"}</div>
+            </div>
             <span className={"badge " + r.status}>{r.status==="pending"?"Pendiente":"Sincronizado"}</span>
           </div>
         ))}
@@ -790,7 +794,7 @@ function Confirmacion({goto, session}){
       <div className="content no-nav success-screen">
         <Seal size={82}/>
         <h2>¡Donación registrada!</h2>
-        <p>El registro quedó guardado en este dispositivo y se sincronizará automáticamente en cuanto haya conexión.</p>
+        <p>El registro quedó guardado en este dispositivo y se sincronizará automáticamente en cuanto haya conexión. El número de autorización oficial (#000001) se asigna al sincronizar y podrás verlo en tu Historial.</p>
         <div style={{marginTop:24, display:"flex", flexDirection:"column", gap:12}}>
           <button className="btn btn-gold" onClick={()=>goto("nueva-donacion")}>Registrar otra donación</button>
           <button className="btn btn-ghost" onClick={()=>goto(session.tipo==="Administrador"?"admin-home":"colab-home")}>Volver al inicio</button>
@@ -882,12 +886,12 @@ function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefresh
         <div className="section-title">Detalle</div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Colaborador</th><th>Fecha</th><th>Donador</th><th>Monto</th><th>Estado</th></tr></thead>
+            <thead><tr><th>N° Autorización</th><th>Colaborador</th><th>Fecha</th><th>Donador</th><th>Monto</th><th>Estado</th></tr></thead>
             <tbody>
               {filtrados.slice().reverse().map(r=>(
-                <tr key={r.id}><td>{r.nombreColaborador}</td><td>{r.fechaCaptacion}</td><td>{r.nombreDonador}</td><td>{fmtMoney(r.cantidad)}</td><td><span className={"badge "+r.status}>{r.status==="pending"?"Pendiente":"Sincronizado"}</span></td></tr>
+                <tr key={r.id}><td style={{fontWeight:700, color:"var(--blue)"}}>{r.numeroAutorizacion || "—"}</td><td>{r.nombreColaborador}</td><td>{r.fechaCaptacion}</td><td>{r.nombreDonador}</td><td>{fmtMoney(r.cantidad)}</td><td><span className={"badge "+r.status}>{r.status==="pending"?"Pendiente":"Sincronizado"}</span></td></tr>
               ))}
-              {filtrados.length===0 && <tr><td colSpan="5" style={{textAlign:"center", color:"var(--ink-faint)"}}>Sin registros para este filtro</td></tr>}
+              {filtrados.length===0 && <tr><td colSpan="6" style={{textAlign:"center", color:"var(--ink-faint)"}}>Sin registros para este filtro</td></tr>}
             </tbody>
           </table>
         </div>
