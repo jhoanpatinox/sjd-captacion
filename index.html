@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Albergue San Juan de Dios · Captación de Donaciones</title>
+<meta name="theme-color" content="#0F3D62" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="SJD Captación" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icon-192.png" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --navy:#123A5C;
+    --blue:#1C6FA8;
+    --blue-light:#2D86C4;
+    --bg:#E9F1F8;
+    --surface:#FFFFFF;
+    --ink:#16283A;
+    --ink-soft:#5C7085;
+    --ink-faint:#8FA2B4;
+    --primary:#1C6FA8;
+    --primary-dark:#123A5C;
+    --primary-soft:#DCEBF6;
+    --gold:#E3A62F;
+    --gold-soft:#FCF1D3;
+    --gold-text:#8A5E10;
+    --danger:#C0432B;
+    --danger-soft:#FBE3DC;
+    --border:#DCE7F0;
+    --radius-lg:22px;
+    --radius:14px;
+    --radius-sm:10px;
+    --shadow:0 8px 24px rgba(18,58,92,0.12);
+    --font-display:'Lora', serif;
+    --font-body:'Public Sans', system-ui, -apple-system, sans-serif;
+    --nav-h:78px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:17px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior-y:none;
+  }
+  #root{min-height:100vh;display:flex;flex-direction:column;}
+  h1,h2,h3{font-family:var(--font-display);font-weight:600;margin:0;}
+  button{font-family:var(--font-body);}
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible{
+    outline:3px solid var(--gold);
+    outline-offset:2px;
+  }
+  .app-shell{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;position:relative;}
+  .header{
+    background:linear-gradient(160deg, var(--navy) 0%, var(--blue-light) 100%);
+    color:#fff;padding:22px 22px 30px;position:relative;
+  }
+  .header-row{display:flex;align-items:center;gap:12px;}
+  .back-btn{
+    background:rgba(255,255,255,0.18);border:none;color:#fff;width:38px;height:38px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;flex-shrink:0;
+  }
+  .conn-badge{
+    margin-left:auto;font-size:12px;padding:5px 10px;border-radius:999px;font-weight:700;
+    display:flex;align-items:center;gap:6px;white-space:nowrap;background:rgba(255,255,255,0.16);color:#fff;
+  }
+  .conn-badge.offline{background:rgba(192,67,43,0.85);}
+  .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+  .header h1{font-size:25px;color:#fff;margin-top:14px;}
+  .header .sub{font-size:14px;color:rgba(255,255,255,0.82);margin-top:5px;}
+  .header .eyebrow{font-size:12.5px;color:rgba(255,255,255,0.75);font-weight:600;letter-spacing:0.4px;margin-top:2px;}
+
+  .content{padding:20px 20px calc(var(--nav-h) + 24px);flex:1;}
+  .content.no-nav{padding-bottom:24px;}
+  .stack{display:flex;flex-direction:column;gap:16px;}
+
+  .seal-badge{
+    width:84px;height:84px;border-radius:50%;margin:0 auto 16px;
+    background:radial-gradient(circle at 35% 30%, #fff, var(--gold) 85%);
+    display:flex;align-items:center;justify-content:center;position:relative;
+    box-shadow:0 8px 22px rgba(227,166,47,0.4);
+  }
+  .seal-badge::before{content:'';position:absolute;inset:6px;border-radius:50%;border:2px dashed rgba(255,255,255,0.7);}
+  .seal-badge span{font-family:var(--font-display);color:var(--navy);font-weight:700;font-size:20px;}
+
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+    padding:20px;box-shadow:var(--shadow);
+  }
+  .card-title{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15.5px;margin-bottom:14px;color:var(--navy);}
+  .lead{color:var(--ink-soft);font-size:15px;text-align:center;margin-top:8px;}
+
+  .big-choice{display:flex;flex-direction:column;gap:14px;margin-top:24px;}
+  .choice-btn{
+    display:flex;align-items:center;gap:16px;background:var(--surface);border:1.5px solid var(--border);
+    border-radius:var(--radius-lg);padding:18px;cursor:pointer;text-align:left;box-shadow:var(--shadow);
+  }
+  .choice-btn:active{transform:scale(0.98);}
+  .choice-icon{width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff;}
+  .choice-icon.a{background:var(--blue);}
+  .choice-icon.b{background:var(--gold);}
+  .choice-text strong{display:block;font-size:17px;font-family:var(--font-display);color:var(--ink);}
+  .choice-text span{font-size:13.5px;color:var(--ink-soft);}
+
+  label{display:block;font-size:13.5px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;}
+  .req::after{content:' *';color:var(--danger);}
+  input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],input[type=number],select{
+    width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+    font-size:16.5px;font-family:var(--font-body);background:#fff;color:var(--ink);
+  }
+  .field{margin-bottom:14px;}
+  .hint{font-size:12.5px;color:var(--ink-faint);margin-top:4px;}
+
+  .btn{
+    width:100%;padding:15px 18px;border-radius:999px;border:none;font-size:16.5px;font-weight:700;
+    cursor:pointer;font-family:var(--font-body);display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  .btn-primary{background:var(--blue);color:#fff;box-shadow:0 6px 16px rgba(28,111,168,0.35);}
+  .btn-primary:disabled{background:#B7C7D4;box-shadow:none;cursor:not-allowed;}
+  .btn-gold{background:var(--gold);color:#fff;box-shadow:0 6px 16px rgba(227,166,47,0.4);}
+  .btn-ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue);}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+  .section-title{
+    font-family:var(--font-display);font-size:16px;color:var(--navy);
+    display:flex;align-items:center;gap:10px;margin:24px 0 12px;
+  }
+  .section-title .num{
+    width:26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:13px;
+    display:flex;align-items:center;justify-content:center;font-family:var(--font-body);font-weight:700;
+  }
+  .section-title:first-child{margin-top:2px;}
+
+  .pill-group{display:flex;flex-wrap:wrap;gap:8px;}
+  .pill{
+    padding:10px 16px;border-radius:999px;border:1.5px solid var(--border);background:#fff;
+    font-size:14.5px;font-weight:700;cursor:pointer;color:var(--ink-soft);
+  }
+  .pill.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+
+  .bank-search{position:relative;}
+  .bank-list{max-height:220px;overflow-y:auto;border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-top:6px;background:#fff;}
+  .bank-item{padding:12px 14px;cursor:pointer;font-size:15px;border-bottom:1px solid #EEF3F8;}
+  .bank-item:hover{background:var(--primary-soft);}
+  .bank-selected{display:flex;align-items:center;justify-content:space-between;background:var(--primary-soft);padding:12px 14px;border-radius:var(--radius-sm);font-weight:700;color:var(--navy);}
+  .bank-selected button{background:none;border:none;color:var(--navy);font-weight:700;cursor:pointer;font-size:14px;}
+
+  .accept-box{background:var(--gold-soft);border:1.5px solid var(--gold);border-radius:var(--radius);padding:16px;font-size:13.5px;color:var(--gold-text);line-height:1.55;}
+  .accept-box ol{margin:8px 0 0;padding-left:18px;}
+  .accept-box li{margin-bottom:6px;}
+  .checkline{display:flex;gap:10px;align-items:flex-start;margin-top:12px;}
+  .checkline input{width:22px;height:22px;margin-top:1px;flex-shrink:0;}
+  .checkline label{margin:0;font-weight:700;font-size:14.5px;}
+
+  .stat-card{background:linear-gradient(150deg, var(--navy), var(--blue-light));color:#fff;border-radius:var(--radius-lg);padding:26px 22px;text-align:center;box-shadow:var(--shadow);}
+  .stat-label{font-size:13px;opacity:0.85;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;}
+  .stat-value{font-family:var(--font-display);font-size:38px;font-weight:700;margin-top:6px;}
+  .stat-sub{font-size:12.5px;opacity:0.82;margin-top:4px;}
+
+  .cashback-banner{
+    background:var(--gold-soft);border-radius:var(--radius);padding:12px 16px;font-size:14px;
+    color:var(--gold-text);font-weight:700;display:flex;align-items:center;gap:8px;margin-top:14px;
+  }
+
+  .fab-space{margin-top:18px;}
+
+  .list-row{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;}
+  .list-row .name{font-weight:700;font-size:15px;}
+  .list-row .meta{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;}
+  .badge.pending{background:var(--gold-soft);color:var(--gold-text);}
+  .badge.synced{background:#DCF1E3;color:#1D6B3B;}
+
+  .empty-state{text-align:center;padding:36px 20px;color:var(--ink-faint);}
+  .error-msg{background:var(--danger-soft);color:var(--danger);border-radius:var(--radius-sm);padding:10px 14px;font-size:14px;font-weight:700;margin-bottom:14px;}
+  .success-screen{text-align:center;padding-top:16px;}
+  .success-screen h2{font-size:23px;margin-top:16px;color:var(--navy);}
+  .success-screen p{color:var(--ink-soft);margin-top:10px;font-size:15px;}
+
+  .toggle-tabs{display:flex;background:var(--primary-soft);border-radius:999px;padding:4px;margin-bottom:20px;}
+  .toggle-tabs button{flex:1;border:none;background:none;padding:10px;border-radius:999px;font-weight:700;font-size:14px;color:var(--navy);cursor:pointer;}
+  .toggle-tabs button.active{background:var(--blue);color:#fff;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+  th{background:var(--primary-soft);color:var(--navy);font-size:11.5px;text-transform:uppercase;}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin-top:6px;}
+  .footnote{font-size:12px;color:var(--ink-faint);text-align:center;margin-top:18px;line-height:1.5;}
+  .install-banner{
+    background:var(--surface);border:1.5px dashed var(--blue);border-radius:var(--radius);
+    padding:14px 16px;display:flex;align-items:center;gap:12px;margin-top:16px;
+  }
+  .install-banner button{flex-shrink:0;}
+
+  /* ---------- Bottom tab navigation ---------- */
+  .bottom-nav{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    background:#fff;border-top:1px solid var(--border);
+    box-shadow:0 -6px 18px rgba(18,58,92,0.08);
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav-inner{max-width:520px;margin:0 auto;display:flex;justify-content:space-around;}
+  .nav-item{
+    background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:4px;
+    color:var(--ink-faint);font-size:11px;font-weight:700;cursor:pointer;padding:6px 8px;border-radius:12px;flex:1;
+  }
+  .nav-item.active{color:var(--blue);}
+  .nav-item .icon-wrap{width:26px;height:26px;display:flex;align-items:center;justify-content:center;}
+  .nav-item.emphasis .icon-wrap{
+    width:44px;height:44px;border-radius:50%;background:var(--blue);color:#fff;
+    box-shadow:0 6px 14px rgba(28,111,168,0.45);margin-top:-22px;border:4px solid var(--bg);
+  }
+  .nav-item.emphasis{color:var(--blue);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const {useState, useEffect, useMemo, useCallback} = React;
+
+/* =========================================================================
+   CONFIGURACIÓN — Backend real conectado (Google Apps Script Web App)
+   ========================================================================= */
+const CONFIG = {
+  API_URL: "https://script.google.com/macros/s/AKfycbx0VfVBJcX8skmRXO36889GDNoy4Rr1OjxkLqIqCytNvlJvQVZI-H8x3amPBfTFOm_h/exec",
+};
+
+const BANCOS_ECUADOR = [
+  "Banco Pichincha C.A.", "Banco de Guayaquil S.A.", "Banco del Pacífico S.A.",
+  "Banco de la Producción PRODUBANCO S.A.", "Banco Bolivariano S.A.",
+  "Banco Internacional S.A.", "Banco General Rumiñahui S.A.", "Banco del Austro S.A.",
+  "Banco de Machala S.A.", "Banco de Loja S.A.", "Banco Solidario S.A.",
+  "Banco Procredit S.A.", "Banco Delbank S.A.", "Banco Comercial de Manabí S.A.",
+  "Banco Coopnacional S.A.", "Banco D-Miro S.A.", "Banco del Litoral S.A.",
+  "Banco Capital S.A.", "Banco Desarrollo de los Pueblos S.A.",
+  "Banco para la Asistencia Comunitaria Finca S.A.", "Diners Club del Ecuador S.A.",
+  "Citibank N.A. Sucursal Ecuador",
+];
+const MONTOS_SUGERIDOS = [10, 15, 20, 30, 50];
+
+/* ========================= Utilidades ========================= */
+function uid(prefix){ return prefix + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,8); }
+function genAutorizacion(){ return "SJD-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2,6).toUpperCase(); }
+async function sha256(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function fmtMoney(n){ return "$" + Number(n||0).toLocaleString("es-EC", {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function inRange(dateStr, range){
+  const d = new Date(dateStr); const now = new Date();
+  if(range==="dia") return dateStr === todayISO();
+  if(range==="semana"){ const diff=(now-d)/86400000; return diff>=0 && diff<7; }
+  if(range==="mes") return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+  if(range==="anio") return d.getFullYear()===now.getFullYear();
+  return true;
+}
+async function storeGet(key, fallback){
+  try{ const r = await window.storage.get(key); return r ? JSON.parse(r.value) : fallback; }
+  catch(e){ return fallback; }
+}
+async function storeSet(key, value){
+  try{ await window.storage.set(key, JSON.stringify(value)); }catch(e){ console.error("storage error", e); }
+}
+function useOnline(){
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(()=>{
+    const on=()=>setOnline(true), off=()=>setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return ()=>{ window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  },[]);
+  return online;
+}
+
+/* ========================= Iconos (línea fina, estilo mockup) ========================= */
+const IconHome = (p)=>(<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>);
+const IconPlus = (p)=>(<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>);
+const IconClock = (p)=>(<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>);
+const IconUser = (p)=>(<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>);
+const IconChart = (p)=>(<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>);
+const IconTeam = (p)=>(<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3.2"/><circle cx="17" cy="9" r="2.6"/><path d="M2.5 20c1-3.4 3.6-5 5.5-5s4.5 1.6 5.5 5"/><path d="M14 15.3c1.6.3 3.4 1.7 4 4.7"/></svg>);
+const IconStar = (p)=>(<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6 7.1.7-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7z"/></svg>);
+const IconDownload = (p)=>(<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>);
+const IconInstall = (p)=>(<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg>);
+
+function Seal({size=84}){ return <div className="seal-badge" style={{width:size,height:size}}><span>SJD</span></div>; }
+
+function Header({title, subtitle, eyebrow, onBack, online, showConn}){
+  return (
+    <div className="header">
+      <div className="header-row">
+        {onBack && <button className="back-btn" onClick={onBack} aria-label="Volver">←</button>}
+        {showConn && (
+          <div className={"conn-badge " + (online?"":"offline")} style={{marginLeft: onBack? "auto":0}}>
+            <span className="dot"></span>{online ? "En línea" : "Sin conexión"}
+          </div>
+        )}
+      </div>
+      {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+      <h1>{title}</h1>
+      {subtitle && <div className="sub">{subtitle}</div>}
+    </div>
+  );
+}
+
+/* ========================= Instalación PWA ========================= */
+function useInstallPrompt(){
+  const [deferred, setDeferred] = useState(null);
+  const [installed, setInstalled] = useState(window.matchMedia('(display-mode: standalone)').matches);
+  useEffect(()=>{
+    const onPrompt = (e)=>{ e.preventDefault(); setDeferred(e); };
+    const onInstalled = ()=>setInstalled(true);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return ()=>{ window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  },[]);
+  const promptInstall = async ()=>{
+    if(!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice;
+    setDeferred(null);
+  };
+  return {canInstall: !!deferred && !installed, installed, promptInstall};
+}
+
+/* ========================= Backend ========================= */
+async function apiPost(action, payload){
+  const res = await fetch(CONFIG.API_URL, {
+    method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body: JSON.stringify({action, ...payload}),
+  });
+  if(!res.ok) throw new Error("Error de red: " + res.status);
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || "Error desconocido");
+  return data;
+}
+async function apiGet(params){
+  const url = CONFIG.API_URL + "?" + new URLSearchParams(params).toString();
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("Error de red: " + res.status);
+  return res.json();
+}
+
+/* ========================= Landing ========================= */
+function Landing({goto, install}){
+  return (
+    <div>
+      <Header title="Albergue San Juan de Dios" subtitle="Sistema de captación de donaciones"/>
+      <div className="content no-nav">
+        <div style={{textAlign:"center", marginTop:6}}>
+          <Seal size={90}/>
+          <p className="lead">Elige cómo quieres continuar</p>
+        </div>
+        <div className="big-choice">
+          <button className="choice-btn" onClick={()=>goto("colab-auth")}>
+            <div className="choice-icon a"><IconUser/></div>
+            <div className="choice-text"><strong>Soy Colaborador</strong><span>Personal y voluntariado del albergue</span></div>
+          </button>
+          <button className="choice-btn" onClick={()=>goto("usuario-registro")}>
+            <div className="choice-icon b"><IconStar/></div>
+            <div className="choice-text"><strong>Soy Usuario</strong><span>Quiero conocer más o donar</span></div>
+          </button>
+        </div>
+        {install.canInstall && (
+          <div className="install-banner">
+            <IconInstall/>
+            <div style={{flex:1, fontSize:13.5, color:"var(--ink-soft)"}}>Instala la app en tu celular para usarla sin conexión.</div>
+            <button className="btn btn-primary" style={{width:"auto", padding:"10px 16px", fontSize:13.5}} onClick={install.promptInstall}>Instalar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ========================= Auth Colaborador ========================= */
+function ColabAuth({goto, onLogin}){
+  const [mode, setMode] = useState("login");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({correo:"",nombre:"",apellido:"",cedula:"",celular:"",password:"",password2:"",tipo:"Colaborador de campo"});
+  const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
+
+  const doLogin = async ()=>{
+    setErr(""); setLoading(true);
+    try{
+      const colaboradores = await storeGet("colaboradores", []);
+      const hash = await sha256(form.password);
+      const found = colaboradores.find(c=>c.correo.toLowerCase()===form.correo.toLowerCase() && c.passwordHash===hash);
+      if(!found){ setErr("Correo o contraseña incorrectos."); setLoading(false); return; }
+      onLogin(found);
+    } finally { setLoading(false); }
+  };
+  const doRegistro = async ()=>{
+    setErr("");
+    if(!form.correo || !form.nombre || !form.apellido || !form.cedula || !form.celular || !form.password){ setErr("Completa todos los campos obligatorios."); return; }
+    if(form.password.length < 6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
+    if(form.password !== form.password2){ setErr("Las contraseñas no coinciden."); return; }
+    setLoading(true);
+    try{
+      const colaboradores = await storeGet("colaboradores", []);
+      if(colaboradores.some(c=>c.correo.toLowerCase()===form.correo.toLowerCase())){ setErr("Ya existe un colaborador registrado con ese correo."); setLoading(false); return; }
+      const passwordHash = await sha256(form.password);
+      const nuevo = {id:uid("col"), correo:form.correo, nombre:form.nombre, apellido:form.apellido, cedula:form.cedula, celular:form.celular, passwordHash, tipo:form.tipo};
+      const actualizados = [...colaboradores, nuevo];
+      await storeSet("colaboradores", actualizados);
+      apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo}).catch(()=>{});
+      onLogin(nuevo);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div>
+      <Header title="Acceso Colaborador" onBack={()=>goto("landing")}/>
+      <div className="content no-nav">
+        <div className="toggle-tabs">
+          <button className={mode==="login"?"active":""} onClick={()=>{setMode("login"); setErr("");}}>Iniciar sesión</button>
+          <button className={mode==="registro"?"active":""} onClick={()=>{setMode("registro"); setErr("");}}>Registrarme</button>
+        </div>
+        {err && <div className="error-msg">{err}</div>}
+        {mode==="login" ? (
+          <div className="card stack">
+            <div className="field"><label className="req">Correo institucional</label><input type="email" value={form.correo} onChange={set("correo")} placeholder="nombre@sanjuandedios.ec"/></div>
+            <div className="field"><label className="req">Contraseña</label><input type="password" value={form.password} onChange={set("password")}/></div>
+            <button className="btn btn-primary" disabled={loading} onClick={doLogin}>{loading?"Ingresando…":"Ingresar"}</button>
+          </div>
+        ) : (
+          <div className="card stack">
+            <div className="field">
+              <label>Tipo de colaborador</label>
+              <div className="pill-group">
+                {["Colaborador de campo","Administrador"].map(t=>(
+                  <button key={t} type="button" className={"pill " + (form.tipo===t?"active":"")} onClick={()=>setForm(f=>({...f,tipo:t}))}>{t}</button>
+                ))}
+              </div>
+            </div>
+            <div className="field"><label className="req">Correo institucional</label><input type="email" value={form.correo} onChange={set("correo")}/></div>
+            <div className="row2">
+              <div className="field"><label className="req">Nombre</label><input type="text" value={form.nombre} onChange={set("nombre")}/></div>
+              <div className="field"><label className="req">Apellido</label><input type="text" value={form.apellido} onChange={set("apellido")}/></div>
+            </div>
+            <div className="row2">
+              <div className="field"><label className="req">Cédula</label><input type="text" inputMode="numeric" value={form.cedula} onChange={set("cedula")}/></div>
+              <div className="field"><label className="req">Celular</label><input type="tel" value={form.celular} onChange={set("celular")}/></div>
+            </div>
+            <div className="row2">
+              <div className="field"><label className="req">Contraseña</label><input type="password" value={form.password} onChange={set("password")}/></div>
+              <div className="field"><label className="req">Confirmar</label><input type="password" value={form.password2} onChange={set("password2")}/></div>
+            </div>
+            <button className="btn btn-primary" disabled={loading} onClick={doRegistro}>{loading?"Creando cuenta…":"Crear cuenta"}</button>
+          </div>
+        )}
+        <p className="footnote">Datos guardados de forma local en este dispositivo para fines del prototipo.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ========================= Registro Usuario externo ========================= */
+function UsuarioRegistro({goto}){
+  const [form, setForm] = useState({nombre:"",apellido:"",correo:"",celular:"",empresa:"",consiento:false});
+  const [done, setDone] = useState(false);
+  const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
+  const valid = form.nombre && form.apellido && form.correo && form.celular && form.consiento;
+
+  if(done){
+    return (
+      <div>
+        <Header title="Bienvenido/a"/>
+        <div className="content no-nav success-screen">
+          <Seal size={78}/>
+          <h2>¡Registro completado!</h2>
+          <p>La sección "Desarrollo para usuarios externos" se integrará aquí próximamente.</p>
+          <div style={{marginTop:22}}><button className="btn btn-ghost" onClick={()=>goto("landing")}>Volver al inicio</button></div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <Header title="Registro de Usuario" onBack={()=>goto("landing")}/>
+      <div className="content no-nav">
+        <div className="card stack">
+          <div className="field"><label className="req">Nombre</label><input type="text" value={form.nombre} onChange={set("nombre")}/></div>
+          <div className="field"><label className="req">Apellido</label><input type="text" value={form.apellido} onChange={set("apellido")}/></div>
+          <div className="field"><label className="req">Correo</label><input type="email" value={form.correo} onChange={set("correo")}/></div>
+          <div className="field"><label className="req">Celular</label><input type="tel" value={form.celular} onChange={set("celular")}/></div>
+          <div className="field"><label>Empresa (si aplica)</label><input type="text" value={form.empresa} onChange={set("empresa")}/></div>
+          <div className="checkline">
+            <input type="checkbox" id="consiento" checked={form.consiento} onChange={e=>setForm(f=>({...f,consiento:e.target.checked}))}/>
+            <label htmlFor="consiento">Acepto el uso de mis datos para fines de contacto y donación, conforme a la LOPDP.</label>
+          </div>
+          <button className="btn btn-gold" disabled={!valid} onClick={()=>setDone(true)}>Completar registro</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ========================= Home Colaborador ========================= */
+function ColabHome({session, goto, queue, online}){
+  const misRegistros = queue.filter(r=>r.colaboradorId===session.id);
+  const totalMes = misRegistros.filter(r=>inRange(r.fechaCaptacion,"mes")).reduce((s,r)=>s+Number(r.cantidad||0),0);
+  const pendientes = misRegistros.filter(r=>r.status==="pending").length;
+  return (
+    <div>
+      <Header eyebrow={"Hola, " + session.nombre} title="Panel de captación" online={online} showConn/>
+      <div className="content">
+        <div className="stat-card">
+          <div className="stat-label">Total recaudado este mes</div>
+          <div className="stat-value">{fmtMoney(totalMes)}</div>
+          <div className="stat-sub">{misRegistros.filter(r=>inRange(r.fechaCaptacion,"mes")).length} donaciones registradas</div>
+        </div>
+        {pendientes>0 && (
+          <div className="cashback-banner"><IconStar/> {pendientes} registro(s) pendientes de sincronizar</div>
+        )}
+        <div className="fab-space">
+          <button className="btn btn-gold" onClick={()=>goto("nueva-donacion")}><IconPlus/> Nueva Donación</button>
+        </div>
+        <div className="section-title">Tus últimos registros</div>
+        {misRegistros.length===0 ? (
+          <div className="empty-state"><Seal size={56}/><p>Aún no registras donaciones.</p></div>
+        ) : misRegistros.slice().reverse().slice(0,6).map(r=>(
+          <div className="list-row" key={r.id}>
+            <div><div className="name">{r.nombreDonador}</div><div className="meta">{r.fechaCaptacion} · {fmtMoney(r.cantidad)} / {r.frecuencia}</div></div>
+            <span className={"badge " + r.status}>{r.status==="pending"?"Pendiente":"Sincronizado"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ColabHistorial({session, goto, queue, online, syncing, onSync}){
+  const misRegistros = queue.filter(r=>r.colaboradorId===session.id).slice().reverse();
+  return (
+    <div>
+      <Header title="Historial" subtitle="Todos tus registros" online={online} showConn/>
+      <div className="content">
+        {misRegistros.length>0 && (
+          <div style={{marginBottom:16}}>
+            <button className="btn btn-ghost" disabled={!online||syncing} onClick={onSync}>{syncing?"Sincronizando…":"Sincronizar pendientes"}</button>
+          </div>
+        )}
+        {misRegistros.length===0 ? (
+          <div className="empty-state"><Seal size={56}/><p>Todavía no hay registros aquí.</p></div>
+        ) : misRegistros.map(r=>(
+          <div className="list-row" key={r.id}>
+            <div><div className="name">{r.nombreDonador}</div><div className="meta">{r.fechaCaptacion} · {fmtMoney(r.cantidad)} / {r.frecuencia} · {r.lugarCaptacion||"—"}</div></div>
+            <span className={"badge " + r.status}>{r.status==="pending"?"Pendiente":"Sincronizado"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CuentaScreen({session, goto, onLogout, install}){
+  return (
+    <div>
+      <Header title="Mi cuenta"/>
+      <div className="content">
+        <div className="card stack">
+          <div style={{textAlign:"center"}}><Seal size={64}/><h2 style={{fontSize:19, marginTop:10}}>{session.nombre} {session.apellido}</h2><div className="hint">{session.tipo}</div></div>
+          <div style={{height:1, background:"var(--border)", margin:"6px 0"}}></div>
+          <div className="field"><label>Correo institucional</label><input type="text" value={session.correo} disabled/></div>
+          <div className="field"><label>Celular</label><input type="text" value={session.celular} disabled/></div>
+          {install.canInstall && (
+            <button className="btn btn-ghost" onClick={install.promptInstall}><IconInstall/> Instalar app en este dispositivo</button>
+          )}
+          <button className="btn btn-primary" onClick={onLogout}>Cerrar sesión</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ========================= Nueva Donación ========================= */
+const CAMPOS_INICIALES = {
+  nombreDonador:"",cedulaDonador:"",email:"",telefono:"",celular:"",fechaNacimiento:"",direccion:"",
+  numeroCuenta:"",banco:"",tipoCuenta:"",nombreTitular:"",numeroTarjeta:"",fechaExpiracion:"",
+  frecuencia:"mensual",cantidad:"",cantidadOtro:"",lugar:"",nota:"",acepta:false,
+};
+
+function NuevaDonacion({session, goto, onGuardado}){
+  const [form, setForm] = useState(CAMPOS_INICIALES);
+  const [bankQuery, setBankQuery] = useState("");
+  const [bankOpen, setBankOpen] = useState(false);
+  const [err, setErr] = useState("");
+  const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
+  const bancosFiltrados = BANCOS_ECUADOR.filter(b=>b.toLowerCase().includes(bankQuery.toLowerCase()));
+  const montoFinal = form.cantidad==="otro" ? form.cantidadOtro : form.cantidad;
+  const requeridos = ["nombreDonador","cedulaDonador","celular","fechaNacimiento","direccion","numeroCuenta","banco","tipoCuenta","nombreTitular","numeroTarjeta","fechaExpiracion"];
+
+  const validar = ()=>{
+    for(const k of requeridos){ if(!form[k]) return "Falta completar un campo obligatorio."; }
+    if(!montoFinal) return "Selecciona o ingresa el monto a debitar.";
+    if(!form.acepta) return "Debes marcar la casilla de autorización para continuar.";
+    return "";
+  };
+
+  const guardar = async ()=>{
+    const problema = validar();
+    if(problema){ setErr(problema); window.scrollTo({top:0, behavior:"smooth"}); return; }
+    setErr("");
+    const registro = {
+      id:uid("don"), numeroAutorizacion:genAutorizacion(), colaboradorId:session.id,
+      nombreColaborador:session.nombre+" "+session.apellido, fechaCaptacion:todayISO(),
+      lugarCaptacion:form.lugar, nombreDonador:form.nombreDonador, cedulaDonador:form.cedulaDonador,
+      email:form.email, telefono:form.telefono, celular:form.celular, fechaNacimiento:form.fechaNacimiento,
+      direccion:form.direccion, numeroCuenta:form.numeroCuenta, banco:form.banco, tipoCuenta:form.tipoCuenta,
+      numeroTarjeta:form.numeroTarjeta, nombreTitular:form.nombreTitular, fechaExpiracion:form.fechaExpiracion,
+      frecuencia:form.frecuencia, cantidad:montoFinal, nota:form.nota, aceptacion:"Sí", status:"pending",
+    };
+    await onGuardado(registro);
+    goto("confirmacion");
+  };
+
+  return (
+    <div>
+      <Header title="Nueva Donación" subtitle="Completa los datos del donante" onBack={()=>goto(session.tipo==="Administrador"?"admin-home":"colab-home")}/>
+      <div className="content no-nav">
+        {err && <div className="error-msg">{err}</div>}
+        <div className="section-title"><span className="num">1</span>Datos del donante</div>
+        <div className="card stack">
+          <div className="field"><label className="req">Nombre completo del donador</label><input type="text" value={form.nombreDonador} onChange={set("nombreDonador")}/></div>
+          <div className="row2">
+            <div className="field"><label className="req">Cédula de identidad</label><input type="text" inputMode="numeric" value={form.cedulaDonador} onChange={set("cedulaDonador")}/></div>
+            <div className="field"><label className="req">Celular</label><input type="tel" value={form.celular} onChange={set("celular")}/></div>
+          </div>
+          <div className="row2">
+            <div className="field"><label>E-mail (opcional)</label><input type="email" value={form.email} onChange={set("email")}/></div>
+            <div className="field"><label>Teléfono (opcional)</label><input type="tel" value={form.telefono} onChange={set("telefono")}/></div>
+          </div>
+          <div className="field"><label className="req">Fecha de nacimiento</label><input type="date" value={form.fechaNacimiento} onChange={set("fechaNacimiento")}/></div>
+          <div className="field"><label className="req">Dirección domicilio</label><input type="text" value={form.direccion} onChange={set("direccion")}/></div>
+        </div>
+
+        <div className="section-title"><span className="num">2</span>Datos bancarios</div>
+        <div className="card stack">
+          <div className="field"><label className="req">Cuenta bancaria número</label><input type="text" inputMode="numeric" value={form.numeroCuenta} onChange={set("numeroCuenta")}/></div>
+          <div className="field">
+            <label className="req">Banco</label>
+            {form.banco ? (
+              <div className="bank-selected">{form.banco}<button onClick={()=>setForm(f=>({...f,banco:""}))}>Cambiar</button></div>
+            ) : (
+              <div className="bank-search">
+                <input type="text" placeholder="Buscar banco…" value={bankQuery} onFocus={()=>setBankOpen(true)} onChange={e=>{setBankQuery(e.target.value); setBankOpen(true);}}/>
+                {bankOpen && (
+                  <div className="bank-list">
+                    {bancosFiltrados.length===0 && <div className="bank-item">Sin resultados</div>}
+                    {bancosFiltrados.map(b=>(<div key={b} className="bank-item" onClick={()=>{setForm(f=>({...f,banco:b})); setBankOpen(false); setBankQuery("");}}>{b}</div>))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="field">
+            <label className="req">Tipo de cuenta</label>
+            <div className="pill-group">{["Ahorros","Corriente"].map(t=>(<button key={t} type="button" className={"pill "+(form.tipoCuenta===t?"active":"")} onClick={()=>setForm(f=>({...f,tipoCuenta:t}))}>{t}</button>))}</div>
+          </div>
+          <div className="field"><label className="req">Nombre en la tarjeta (titular)</label><input type="text" value={form.nombreTitular} onChange={set("nombreTitular")}/></div>
+          <div className="row2">
+            <div className="field"><label className="req">Número de tarjeta</label><input type="text" inputMode="numeric" value={form.numeroTarjeta} onChange={set("numeroTarjeta")}/></div>
+            <div className="field"><label className="req">Fecha de expiración</label><input type="date" value={form.fechaExpiracion} onChange={set("fechaExpiracion")}/></div>
+          </div>
+        </div>
+
+        <div className="section-title"><span className="num">3</span>Frecuencia y monto</div>
+        <div className="card stack">
+          <div className="field">
+            <label className="req">Frecuencia del débito</label>
+            <div className="pill-group">{["diaria","semanal","mensual"].map(f=>(<button key={f} type="button" className={"pill "+(form.frecuencia===f?"active":"")} onClick={()=>setForm(x=>({...x,frecuencia:f}))} style={{textTransform:"capitalize"}}>{f}</button>))}</div>
+          </div>
+          <div className="field">
+            <label className="req">Cantidad a debitar</label>
+            <div className="pill-group">
+              {MONTOS_SUGERIDOS.map(m=>(<button key={m} type="button" className={"pill "+(form.cantidad===String(m)?"active":"")} onClick={()=>setForm(f=>({...f,cantidad:String(m)}))}>${m}</button>))}
+              <button type="button" className={"pill "+(form.cantidad==="otro"?"active":"")} onClick={()=>setForm(f=>({...f,cantidad:"otro"}))}>Otro</button>
+            </div>
+            {form.cantidad==="otro" && <input style={{marginTop:10}} type="number" min="1" placeholder="Monto en USD" value={form.cantidadOtro} onChange={set("cantidadOtro")}/>}
+          </div>
+        </div>
+
+        <div className="section-title"><span className="num">4</span>Autorización</div>
+        <div className="card stack">
+          <div className="accept-box">
+            <strong>Al continuar, el donante declara y autoriza:</strong>
+            <ol>
+              <li>Eximo de cualquier responsabilidad al banco del proceso e información que remita a mi nombre el Albergue San Juan de Dios.</li>
+              <li>Conozco y acepto que la presente autorización estará vigente mientras no sea revocada directamente por mí.</li>
+              <li>Toda la información registrada es confidencial y reservada.</li>
+              <li>Declaro que el origen de los fondos propios entregados a la Orden Hospitalaria San Juan de Dios proviene de actividades lícitas y no relacionadas con actividades ilegales.</li>
+            </ol>
+          </div>
+          <div className="checkline">
+            <input type="checkbox" id="acepta" checked={form.acepta} onChange={e=>setForm(f=>({...f,acepta:e.target.checked}))}/>
+            <label htmlFor="acepta">El donante ha leído y acepta los puntos anteriores (firma digital)</label>
+          </div>
+          <div className="row2">
+            <div className="field"><label>Lugar</label><input type="text" value={form.lugar} onChange={set("lugar")} placeholder="Ej. Parque La Carolina"/></div>
+            <div className="field"><label>Nota (opcional)</label><input type="text" value={form.nota} onChange={set("nota")}/></div>
+          </div>
+        </div>
+
+        <div style={{marginTop:20}}><button className="btn btn-primary" onClick={guardar}>Guardar donación</button></div>
+        <p className="footnote">Colaborador: {session.nombre} {session.apellido} · Fecha: {todayISO()}</p>
+      </div>
+    </div>
+  );
+}
+
+function Confirmacion({goto, session}){
+  return (
+    <div>
+      <Header title="Confirmación"/>
+      <div className="content no-nav success-screen">
+        <Seal size={82}/>
+        <h2>¡Donación registrada!</h2>
+        <p>El registro quedó guardado en este dispositivo y se sincronizará automáticamente en cuanto haya conexión.</p>
+        <div style={{marginTop:24, display:"flex", flexDirection:"column", gap:12}}>
+          <button className="btn btn-gold" onClick={()=>goto("nueva-donacion")}>Registrar otra donación</button>
+          <button className="btn btn-ghost" onClick={()=>goto(session.tipo==="Administrador"?"admin-home":"colab-home")}>Volver al inicio</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ========================= Administrador ========================= */
+function AdminHome({queue, colaboradores, online}){
+  const totalMes = queue.filter(r=>inRange(r.fechaCaptacion,"mes")).reduce((s,r)=>s+Number(r.cantidad||0),0);
+  const pendientes = queue.filter(r=>r.status==="pending").length;
+  return (
+    <div>
+      <Header eyebrow="Panel administrador" title="Resumen general" online={online} showConn/>
+      <div className="content">
+        <div className="stat-card">
+          <div className="stat-label">Total recaudado este mes</div>
+          <div className="stat-value">{fmtMoney(totalMes)}</div>
+          <div className="stat-sub">{colaboradores.length} colaboradores activos</div>
+        </div>
+        {pendientes>0 && <div className="cashback-banner"><IconStar/> {pendientes} registro(s) pendientes de sincronizar en la red</div>}
+        <div className="section-title">Actividad reciente</div>
+        {queue.length===0 ? (
+          <div className="empty-state"><Seal size={56}/><p>Sin registros todavía.</p></div>
+        ) : queue.slice().reverse().slice(0,6).map(r=>(
+          <div className="list-row" key={r.id}>
+            <div><div className="name">{r.nombreDonador}</div><div className="meta">{r.nombreColaborador} · {r.fechaCaptacion}</div></div>
+            <span className={"badge " + r.status}>{fmtMoney(r.cantidad)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefreshRemote}){
+  const [filtroColab, setFiltroColab] = useState("todos");
+  const [filtroFecha, setFiltroFecha] = useState("mes");
+  const filtrados = queue.filter(r=>(filtroColab==="todos"||r.colaboradorId===filtroColab) && inRange(r.fechaCaptacion, filtroFecha));
+  const total = filtrados.reduce((s,r)=>s+Number(r.cantidad||0),0);
+
+  const descargarInforme = ()=>{
+    const headers = ["Número de autorización única de débito","Nombre de Colaborador","Fecha de Captación","Lugar de Captación","Nombre Donador","Cédula de Donador","Email","Teléfono","Celular","Fecha de nacimiento","Dirección","Número cuenta bancaria","Banco","Ahorros/Corriente","Número de tarjeta","Nombre de Titular","Fecha de expiración","Frecuencia de débito","Cantidad a debitar","Aceptación"];
+    const rows = filtrados.map(r=>[r.numeroAutorizacion,r.nombreColaborador,r.fechaCaptacion,r.lugarCaptacion,r.nombreDonador,r.cedulaDonador,r.email,r.telefono,r.celular,r.fechaNacimiento,r.direccion,r.numeroCuenta,r.banco,r.tipoCuenta,r.numeroTarjeta,r.nombreTitular,r.fechaExpiracion,r.frecuencia,r.cantidad,r.aceptacion]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Donaciones");
+    XLSX.writeFile(wb, "Informe_Donaciones_" + todayISO() + ".xlsx");
+  };
+
+  return (
+    <div>
+      <Header title="Reportes" subtitle="Filtra y exporta la captación" online={online} showConn/>
+      <div className="content">
+        <div className="stat-card">
+          <div className="stat-label">Total ({filtroFecha})</div>
+          <div className="stat-value">{fmtMoney(total)}</div>
+          <div className="stat-sub">{filtrados.length} donaciones</div>
+        </div>
+        <div className="section-title">Filtros</div>
+        <div className="card">
+          <label>Colaborador</label>
+          <select value={filtroColab} onChange={e=>setFiltroColab(e.target.value)} style={{marginBottom:14}}>
+            <option value="todos">Todos los colaboradores</option>
+            {colaboradores.map(c=><option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}
+          </select>
+          <label>Periodo</label>
+          <div className="pill-group">{[["dia","Día"],["semana","Semana"],["mes","Mes"],["anio","Año"]].map(([k,l])=>(<button key={k} className={"pill "+(filtroFecha===k?"active":"")} onClick={()=>setFiltroFecha(k)}>{l}</button>))}</div>
+        </div>
+        <div className="fab-space"><button className="btn btn-gold" onClick={descargarInforme}><IconDownload/> Descargar informe (Excel)</button></div>
+        <div style={{display:"flex", gap:10, marginTop:12}}>
+          <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar desde Sheets</button>
+          <button className="btn btn-ghost" disabled={!online||syncing} onClick={onSync}>{syncing?"Sincronizando…":"Sincronizar"}</button>
+        </div>
+        <div className="section-title">Detalle</div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Colaborador</th><th>Fecha</th><th>Donador</th><th>Monto</th><th>Estado</th></tr></thead>
+            <tbody>
+              {filtrados.slice().reverse().map(r=>(
+                <tr key={r.id}><td>{r.nombreColaborador}</td><td>{r.fechaCaptacion}</td><td>{r.nombreDonador}</td><td>{fmtMoney(r.cantidad)}</td><td><span className={"badge "+r.status}>{r.status==="pending"?"Pendiente":"Sincronizado"}</span></td></tr>
+              ))}
+              {filtrados.length===0 && <tr><td colSpan="5" style={{textAlign:"center", color:"var(--ink-faint)"}}>Sin registros para este filtro</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminColaboradores({queue, colaboradores, online}){
+  const porColaborador = colaboradores.map(c=>{
+    const propios = queue.filter(r=>r.colaboradorId===c.id);
+    const totalMes = propios.filter(r=>inRange(r.fechaCaptacion,"mes")).reduce((s,r)=>s+Number(r.cantidad||0),0);
+    return {...c, totalMes, cantidad: propios.length};
+  });
+  return (
+    <div>
+      <Header title="Colaboradores" subtitle="Desempeño por persona" online={online} showConn/>
+      <div className="content">
+        {porColaborador.length===0 ? (
+          <div className="empty-state"><Seal size={56}/><p>Todavía no hay colaboradores registrados.</p></div>
+        ) : porColaborador.map(c=>(
+          <div className="list-row" key={c.id}>
+            <div><div className="name">{c.nombre} {c.apellido}</div><div className="meta">{c.tipo} · {c.cantidad} registros</div></div>
+            <strong style={{color:"var(--blue)"}}>{fmtMoney(c.totalMes)}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ========================= Navegación inferior ========================= */
+function BottomNav({role, screen, goto}){
+  const colabTabs = [
+    {key:"colab-home", label:"Inicio", icon:IconHome},
+    {key:"colab-historial", label:"Historial", icon:IconClock},
+    {key:"nueva-donacion", label:"Donar", icon:IconPlus, emphasis:true},
+    {key:"cuenta", label:"Cuenta", icon:IconUser},
+  ];
+  const adminTabs = [
+    {key:"admin-home", label:"Inicio", icon:IconHome},
+    {key:"admin-reportes", label:"Reportes", icon:IconChart},
+    {key:"admin-colaboradores", label:"Equipo", icon:IconTeam},
+    {key:"cuenta", label:"Cuenta", icon:IconUser},
+  ];
+  const tabs = role==="Administrador" ? adminTabs : colabTabs;
+  return (
+    <div className="bottom-nav">
+      <div className="bottom-nav-inner">
+        {tabs.map(t=>{
+          const Icon = t.icon;
+          const active = screen===t.key;
+          return (
+            <button key={t.key} className={"nav-item " + (active?"active":"") + (t.emphasis?" emphasis":"")} onClick={()=>goto(t.key)}>
+              <span className="icon-wrap"><Icon/></span>{t.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ========================= App raíz ========================= */
+function App(){
+  const [screen, setScreen] = useState("landing");
+  const [session, setSession] = useState(null);
+  const [queue, setQueue] = useState([]);
+  const [colaboradores, setColaboradores] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const online = useOnline();
+  const install = useInstallPrompt();
+
+  useEffect(()=>{
+    (async ()=>{
+      setQueue(await storeGet("donaciones_queue", []));
+      setColaboradores(await storeGet("colaboradores", []));
+    })();
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+    }
+  },[]);
+
+  const goto = useCallback((s)=>{ setScreen(s); window.scrollTo({top:0}); },[]);
+  const onLogin = (col)=>{ setSession(col); goto(col.tipo==="Administrador" ? "admin-home" : "colab-home"); };
+  const onLogout = ()=>{ setSession(null); goto("landing"); };
+
+  const trySync = useCallback(async (currentQueue)=>{
+    const pendientes = currentQueue.filter(r=>r.status==="pending");
+    if(pendientes.length===0) return;
+    setSyncing(true);
+    let actualizado = currentQueue;
+    for(const r of pendientes){
+      try{
+        await apiPost("nuevaDonacion", {registro:r});
+        actualizado = actualizado.map(x=>x.id===r.id ? {...x, status:"synced"} : x);
+      }catch(e){ /* se reintenta luego */ }
+    }
+    setQueue(actualizado);
+    await storeSet("donaciones_queue", actualizado);
+    setSyncing(false);
+  },[]);
+
+  const onGuardado = async (registro)=>{
+    const nueva = [...queue, registro];
+    setQueue(nueva);
+    await storeSet("donaciones_queue", nueva);
+    if(online) trySync(nueva);
+  };
+
+  useEffect(()=>{ if(online) trySync(queue); /* eslint-disable-next-line */ },[online]);
+  const onSync = ()=>trySync(queue);
+  const onRefreshRemote = async ()=>{
+    try{ const data = await apiGet({action:"listar"}); if(data.registros) setQueue(data.registros.map(r=>({...r, status:"synced"}))); }
+    catch(e){}
+  };
+
+  const showBottomNav = session && ["colab-home","colab-historial","admin-home","admin-reportes","admin-colaboradores","cuenta"].includes(screen);
+
+  return (
+    <div className="app-shell">
+      {screen==="landing" && <Landing goto={goto} install={install}/>}
+      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin}/>}
+      {screen==="usuario-registro" && <UsuarioRegistro goto={goto}/>}
+      {screen==="colab-home" && session && <ColabHome session={session} goto={goto} queue={queue} online={online}/>}
+      {screen==="colab-historial" && session && <ColabHistorial session={session} goto={goto} queue={queue} online={online} syncing={syncing} onSync={onSync}/>}
+      {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
+      {screen==="confirmacion" && session && <Confirmacion goto={goto} session={session}/>}
+      {screen==="admin-home" && session && <AdminHome queue={queue} colaboradores={colaboradores} online={online}/>}
+      {screen==="admin-reportes" && session && <AdminReportes queue={queue} colaboradores={colaboradores} online={online} syncing={syncing} onSync={onSync} onRefreshRemote={onRefreshRemote}/>}
+      {screen==="admin-colaboradores" && session && <AdminColaboradores queue={queue} colaboradores={colaboradores} online={online}/>}
+      {screen==="cuenta" && session && <CuentaScreen session={session} goto={goto} onLogout={onLogout} install={install}/>}
+      {showBottomNav && <BottomNav role={session.tipo} screen={screen} goto={goto}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
