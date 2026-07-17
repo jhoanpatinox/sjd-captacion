@@ -838,7 +838,7 @@ function AdminHome({queue, colaboradores, online}){
   );
 }
 
-function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefreshRemote}){
+function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
   const [filtroColab, setFiltroColab] = useState("todos");
   const [filtroFecha, setFiltroFecha] = useState("mes");
   const [rangoDesde, setRangoDesde] = useState("");
@@ -909,9 +909,8 @@ function AdminReportes({queue, colaboradores, online, syncing, onSync, onRefresh
           )}
         </div>
         <div className="fab-space"><button className="btn btn-gold" onClick={descargarInforme}><IconDownload/> Descargar informe (Excel)</button></div>
-        <div style={{display:"flex", gap:10, marginTop:12}}>
+        <div style={{marginTop:12}}>
           <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar desde Sheets</button>
-          <button className="btn btn-ghost" disabled={!online||syncing} onClick={onSync}>{syncing?"Sincronizando…":"Sincronizar"}</button>
         </div>
         <div className="section-title">Detalle</div>
         <div className="table-wrap">
@@ -1015,7 +1014,10 @@ function App(){
     (async ()=>{
       setQueue(await storeGet("donaciones_queue", []));
       setColaboradores(await storeGet("colaboradores", []));
-      if(navigator.onLine) fetchColaboradoresRemote();
+      if(navigator.onLine){
+        fetchColaboradoresRemote();
+        fetchDonacionesRemote();
+      }
     })();
     if("serviceWorker" in navigator){
       navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
@@ -1044,8 +1046,29 @@ function App(){
     }catch(e){ /* sin conexión o backend no configurado */ }
   };
 
+  /* Trae TODAS las donaciones ya registradas en el Google Sheets (captadas
+     desde cualquier celular) y las combina con lo que este dispositivo
+     todavía tiene pendiente de sincronizar. Así, el total mostrado nunca
+     depende de que este celular en particular haya capturado algo: se ve
+     lo mismo recién instalada la app que después de semanas de uso. */
+  const fetchDonacionesRemote = async ()=>{
+    try{
+      const data = await apiGet({action:"listar"});
+      if(!data.registros) return;
+      const local = await storeGet("donaciones_queue", []);
+      const pendientesLocales = local.filter(r=>r.status==="pending");
+      const remotos = data.registros.map(r=>({...r, id: r.numeroAutorizacion || uid("srv"), status:"synced"}));
+      const combinados = [...pendientesLocales, ...remotos];
+      setQueue(combinados);
+      await storeSet("donaciones_queue", combinados);
+    }catch(e){ /* sin conexión o backend no configurado */ }
+  };
+
   const goto = useCallback((s)=>{ setScreen(s); window.scrollTo({top:0}); },[]);
-  const onLogin = (col)=>{ setSession(col); goto(col.tipo==="Administrador" ? "admin-home" : "colab-home"); };
+  const onLogin = (col)=>{
+    setSession(col); goto(col.tipo==="Administrador" ? "admin-home" : "colab-home");
+    if(navigator.onLine){ fetchColaboradoresRemote(); fetchDonacionesRemote(); }
+  };
   const onLogout = ()=>{ setSession(null); goto("landing"); };
 
   const trySync = useCallback(async (currentQueue)=>{
@@ -1074,8 +1097,7 @@ function App(){
   useEffect(()=>{ if(online) trySync(queue); /* eslint-disable-next-line */ },[online]);
   const onSync = ()=>trySync(queue);
   const onRefreshRemote = async ()=>{
-    try{ const data = await apiGet({action:"listar"}); if(data.registros) setQueue(data.registros.map(r=>({...r, status:"synced"}))); }
-    catch(e){}
+    await fetchDonacionesRemote();
     fetchColaboradoresRemote();
   };
 
@@ -1091,7 +1113,7 @@ function App(){
       {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
       {screen==="confirmacion" && session && <Confirmacion goto={goto} session={session}/>}
       {screen==="admin-home" && session && <AdminHome queue={queue} colaboradores={colaboradores} online={online}/>}
-      {screen==="admin-reportes" && session && <AdminReportes queue={queue} colaboradores={colaboradores} online={online} syncing={syncing} onSync={onSync} onRefreshRemote={onRefreshRemote}/>}
+      {screen==="admin-reportes" && session && <AdminReportes queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote}/>}
       {screen==="admin-colaboradores" && session && <AdminColaboradores queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote}/>}
       {screen==="cuenta" && session && <CuentaScreen session={session} goto={goto} onLogout={onLogout} install={install}/>}
       {showBottomNav && <BottomNav role={session.tipo} screen={screen} goto={goto}/>}
