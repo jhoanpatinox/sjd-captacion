@@ -270,12 +270,18 @@ function inRange(dateStr, range){
   if(range==="anio") return d.getFullYear()===now.getFullYear();
   return true;
 }
+/* Almacenamiento local del dispositivo (localStorage del navegador). Persiste
+   entre recargas y cierres de la app, algo indispensable en un PWA que debe
+   funcionar sin conexión en el celular de cada colaboradora. */
 async function storeGet(key, fallback){
-  try{ const r = await window.storage.get(key); return r ? JSON.parse(r.value) : fallback; }
-  catch(e){ return fallback; }
+  try{
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fallback;
+  } catch(e){ return fallback; }
 }
 async function storeSet(key, value){
-  try{ await window.storage.set(key, JSON.stringify(value)); }catch(e){ console.error("storage error", e); }
+  try{ localStorage.setItem(key, JSON.stringify(value)); }
+  catch(e){ console.error("storage error", e); }
 }
 function useOnline(){
   const [online, setOnline] = useState(navigator.onLine);
