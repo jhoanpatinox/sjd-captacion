@@ -370,16 +370,12 @@ function Landing({goto, install}){
       <div className="content no-nav">
         <div style={{textAlign:"center", marginTop:6}}>
           <Seal size={90}/>
-          <p className="lead">Elige cómo quieres continuar</p>
+          <p className="lead">Acceso exclusivo para colaboradoras y colaboradores del albergue</p>
         </div>
         <div className="big-choice">
           <button className="choice-btn" onClick={()=>goto("colab-auth")}>
             <div className="choice-icon a"><IconUser/></div>
-            <div className="choice-text"><strong>Soy Colaborador</strong><span>Personal y voluntariado del albergue</span></div>
-          </button>
-          <button className="choice-btn" onClick={()=>goto("usuario-registro")}>
-            <div className="choice-icon b"><IconStar/></div>
-            <div className="choice-text"><strong>Soy Usuario</strong><span>Quiero conocer más o donar</span></div>
+            <div className="choice-text"><strong>Ingresar</strong><span>Inicia sesión o regístrate como colaborador</span></div>
           </button>
         </div>
         {install.canInstall && (
@@ -519,46 +515,6 @@ function ColabAuth({goto, onLogin}){
 }
 
 /* ========================= Registro Usuario externo ========================= */
-function UsuarioRegistro({goto}){
-  const [form, setForm] = useState({nombre:"",apellido:"",correo:"",celular:"",empresa:"",consiento:false});
-  const [done, setDone] = useState(false);
-  const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
-  const valid = form.nombre && form.apellido && form.correo && form.celular && form.consiento;
-
-  if(done){
-    return (
-      <div>
-        <Header title="Bienvenido/a"/>
-        <div className="content no-nav success-screen">
-          <Seal size={78}/>
-          <h2>¡Registro completado!</h2>
-          <p>La sección "Desarrollo para usuarios externos" se integrará aquí próximamente.</p>
-          <div style={{marginTop:22}}><button className="btn btn-ghost" onClick={()=>goto("landing")}>Volver al inicio</button></div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <Header title="Registro de Usuario" onBack={()=>goto("landing")}/>
-      <div className="content no-nav">
-        <div className="card stack">
-          <div className="field"><label className="req">Nombre</label><input type="text" value={form.nombre} onChange={set("nombre")}/></div>
-          <div className="field"><label className="req">Apellido</label><input type="text" value={form.apellido} onChange={set("apellido")}/></div>
-          <div className="field"><label className="req">Correo</label><input type="email" value={form.correo} onChange={set("correo")}/></div>
-          <div className="field"><label className="req">Celular</label><input type="tel" value={form.celular} onChange={set("celular")}/></div>
-          <div className="field"><label>Empresa (si aplica)</label><input type="text" value={form.empresa} onChange={set("empresa")}/></div>
-          <div className="checkline">
-            <input type="checkbox" id="consiento" checked={form.consiento} onChange={e=>setForm(f=>({...f,consiento:e.target.checked}))}/>
-            <label htmlFor="consiento">Acepto el uso de mis datos para fines de contacto y donación, conforme a la LOPDP.</label>
-          </div>
-          <button className="btn btn-gold" disabled={!valid} onClick={()=>setDone(true)}>Completar registro</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ========================= Home Colaborador ========================= */
 function ColabHome({session, goto, queue, online}){
   const misRegistros = queue.filter(r=>r.colaboradorId===session.id || r.nombreColaborador===(session.nombre+" "+session.apellido));
@@ -1107,7 +1063,6 @@ function App(){
     <div className="app-shell">
       {screen==="landing" && <Landing goto={goto} install={install}/>}
       {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin}/>}
-      {screen==="usuario-registro" && <UsuarioRegistro goto={goto}/>}
       {screen==="colab-home" && session && <ColabHome session={session} goto={goto} queue={queue} online={online}/>}
       {screen==="colab-historial" && session && <ColabHistorial session={session} goto={goto} queue={queue} online={online} syncing={syncing} onSync={onSync}/>}
       {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
