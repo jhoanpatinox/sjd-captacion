@@ -251,6 +251,17 @@ const BANCOS_ECUADOR = [
   "Citibank N.A. Sucursal Ecuador", "Otro",
 ];
 const MONTOS_SUGERIDOS = [10, 15, 20, 30, 50];
+const MARCAS_TARJETA = ["Visa", "Mastercard", "American Express", "Diners Club International", "Discover", "Otro"];
+const FRECUENCIAS_OTRO = ["trimestral", "semestral", "anual"];
+/* Cuentas de Administrador precargadas. El registro público (\"Registrarme\")
+   fue eliminado: ahora solo estas 3 cuentas fijas pueden iniciar sesión como
+   Administrador, y son ellas quienes crean/editan/eliminan a los
+   colaboradores de campo desde la sección \"Usuarios\". */
+const ADMIN_SEEDS = [
+  { correo: "admintest1@hotmail.com", password: "123456" },
+  { correo: "admintest2@hotmail.com", password: "123456" },
+  { correo: "admintest3@hotmail.com", password: "123456" },
+];
 
 /* ========================= Utilidades ========================= */
 function uid(prefix){ return prefix + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,8); }
@@ -269,6 +280,25 @@ function inRange(dateStr, range){
   if(range==="mes") return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
   if(range==="anio") return d.getFullYear()===now.getFullYear();
   return true;
+}
+function isTenDigits(v){ return /^\d{10}$/.test(String(v||"")); }
+function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"")); }
+function onlyDigits(v, max){ return String(v||"").replace(/[^0-9]/g,"").slice(0, max); }
+/* Crea las 3 cuentas de Administrador precargadas (ADMIN_SEEDS) si todavía no
+   existen en este dispositivo/servidor. Se ejecuta al arrancar la app. */
+async function ensureAdminSeeds(colaboradores){
+  let cambios = false;
+  const actualizados = [...colaboradores];
+  for(let i=0;i<ADMIN_SEEDS.length;i++){
+    const seed = ADMIN_SEEDS[i];
+    if(!actualizados.some(c=>c.correo.toLowerCase()===seed.correo.toLowerCase())){
+      const passwordHash = await sha256(seed.password);
+      actualizados.push({id:uid("col"), correo:seed.correo, nombre:"Administrador", apellido:String(i+1), cedula:"", celular:"", passwordHash, tipo:"Administrador"});
+      cambios = true;
+    }
+  }
+  if(cambios) await storeSet("colaboradores", actualizados);
+  return actualizados;
 }
 /* Almacenamiento local del dispositivo (localStorage del navegador). Persiste
    entre recargas y cierres de la app, algo indispensable en un PWA que debe
@@ -391,12 +421,16 @@ function Landing({goto, install}){
 }
 
 /* ========================= Auth Colaborador ========================= */
+/* El registro público ("Registrarme") ya no existe: las cuentas de
+   colaborador y administrador las crea/edita exclusivamente un
+   Administrador desde la sección "Usuarios". Aquí solo hay inicio de
+   sesión y restablecimiento de contraseña (sin aprobación de nadie). */
 function ColabAuth({goto, onLogin}){
   const [mode, setMode] = useState("login");
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({correo:"",nombre:"",apellido:"",cedula:"",celular:"",password:"",password2:"",tipo:"Colaborador de campo"});
+  const [form, setForm] = useState({correo:"",password:""});
   const [resetForm, setResetForm] = useState({correo:"",cedula:"",password:"",password2:""});
   const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
   const setReset = (k)=>(e)=>setResetForm(f=>({...f,[k]:e.target.value}));
@@ -409,23 +443,6 @@ function ColabAuth({goto, onLogin}){
       const found = colaboradores.find(c=>c.correo.toLowerCase()===form.correo.toLowerCase() && c.passwordHash===hash);
       if(!found){ setErr("Correo o contraseña incorrectos."); setLoading(false); return; }
       onLogin(found);
-    } finally { setLoading(false); }
-  };
-  const doRegistro = async ()=>{
-    setErr("");
-    if(!form.correo || !form.nombre || !form.apellido || !form.cedula || !form.celular || !form.password){ setErr("Completa todos los campos obligatorios."); return; }
-    if(form.password.length < 6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
-    if(form.password !== form.password2){ setErr("Las contraseñas no coinciden."); return; }
-    setLoading(true);
-    try{
-      const colaboradores = await storeGet("colaboradores", []);
-      if(colaboradores.some(c=>c.correo.toLowerCase()===form.correo.toLowerCase())){ setErr("Ya existe un colaborador registrado con ese correo."); setLoading(false); return; }
-      const passwordHash = await sha256(form.password);
-      const nuevo = {id:uid("col"), correo:form.correo, nombre:form.nombre, apellido:form.apellido, cedula:form.cedula, celular:form.celular, passwordHash, tipo:form.tipo};
-      const actualizados = [...colaboradores, nuevo];
-      await storeSet("colaboradores", actualizados);
-      apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo}).catch(()=>{});
-      onLogin(nuevo);
     } finally { setLoading(false); }
   };
   const doReset = async ()=>{
@@ -454,12 +471,6 @@ function ColabAuth({goto, onLogin}){
     <div>
       <Header title={mode==="reset" ? "Restablecer contraseña" : "Acceso Colaborador"} onBack={()=>mode==="reset" ? setMode("login") : goto("landing")}/>
       <div className="content no-nav">
-        {mode!=="reset" && (
-          <div className="toggle-tabs">
-            <button className={mode==="login"?"active":""} onClick={()=>{setMode("login"); setErr(""); setOkMsg("");}}>Iniciar sesión</button>
-            <button className={mode==="registro"?"active":""} onClick={()=>{setMode("registro"); setErr(""); setOkMsg("");}}>Registrarme</button>
-          </div>
-        )}
         {err && <div className="error-msg">{err}</div>}
         {okMsg && <div className="cashback-banner" style={{marginTop:0, marginBottom:16}}><IconStar/> {okMsg}</div>}
         {mode==="login" && (
@@ -468,32 +479,6 @@ function ColabAuth({goto, onLogin}){
             <div className="field"><label className="req">Contraseña</label><input type="password" value={form.password} onChange={set("password")}/></div>
             <button className="btn btn-primary" disabled={loading} onClick={doLogin}>{loading?"Ingresando…":"Ingresar"}</button>
             <button type="button" className="btn-text" style={{alignSelf:"center"}} onClick={()=>{setMode("reset"); setErr(""); setOkMsg(""); setResetForm(f=>({...f, correo:form.correo}));}}>¿Olvidaste tu contraseña? Restablécela aquí</button>
-          </div>
-        )}
-        {mode==="registro" && (
-          <div className="card stack">
-            <div className="field">
-              <label>Tipo de colaborador</label>
-              <div className="pill-group">
-                {["Colaborador de campo","Administrador"].map(t=>(
-                  <button key={t} type="button" className={"pill " + (form.tipo===t?"active":"")} onClick={()=>setForm(f=>({...f,tipo:t}))}>{t}</button>
-                ))}
-              </div>
-            </div>
-            <div className="field"><label className="req">Correo institucional</label><input type="email" value={form.correo} onChange={set("correo")}/></div>
-            <div className="row2">
-              <div className="field"><label className="req">Nombre</label><input type="text" value={form.nombre} onChange={set("nombre")}/></div>
-              <div className="field"><label className="req">Apellido</label><input type="text" value={form.apellido} onChange={set("apellido")}/></div>
-            </div>
-            <div className="row2">
-              <div className="field"><label className="req">Cédula</label><input type="text" inputMode="numeric" value={form.cedula} onChange={set("cedula")}/></div>
-              <div className="field"><label className="req">Celular</label><input type="tel" value={form.celular} onChange={set("celular")}/></div>
-            </div>
-            <div className="row2">
-              <div className="field"><label className="req">Contraseña</label><input type="password" value={form.password} onChange={set("password")}/></div>
-              <div className="field"><label className="req">Confirmar</label><input type="password" value={form.password2} onChange={set("password2")}/></div>
-            </div>
-            <button className="btn btn-primary" disabled={loading} onClick={doRegistro}>{loading?"Creando cuenta…":"Crear cuenta"}</button>
           </div>
         )}
         {mode==="reset" && (
@@ -508,13 +493,12 @@ function ColabAuth({goto, onLogin}){
             <button className="btn btn-primary" disabled={loading} onClick={doReset}>{loading?"Actualizando…":"Restablecer contraseña"}</button>
           </div>
         )}
-        <p className="footnote">Datos guardados de forma local en este dispositivo para fines del prototipo.</p>
+        <p className="footnote">Las cuentas de colaborador y administrador son creadas y administradas por el equipo de Administración.</p>
       </div>
     </div>
   );
 }
 
-/* ========================= Registro Usuario externo ========================= */
 /* ========================= Home Colaborador ========================= */
 function ColabHome({session, goto, queue, online}){
   const misRegistros = queue.filter(r=>r.colaboradorId===session.id || r.nombreColaborador===(session.nombre+" "+session.apellido));
@@ -600,7 +584,7 @@ function CuentaScreen({session, goto, onLogout, install}){
 /* ========================= Nueva Donación ========================= */
 const CAMPOS_INICIALES = {
   nombreDonador:"",cedulaDonador:"",email:"",telefono:"",celular:"",fechaNacimiento:"",direccion:"",
-  numeroCuenta:"",banco:"",bancoOtro:"",tipoCuenta:"",nombreTitular:"",numeroTarjeta:"",fechaExpiracion:"",
+  numeroCuenta:"",banco:"",bancoOtro:"",tipoCuenta:"",marcaTarjeta:"",marcaTarjetaOtro:"",numeroTarjeta:"",fechaExpiracion:"",
   frecuencia:"mensual",cantidad:"",cantidadOtro:"",lugar:"",nota:"",acepta:false,
 };
 
@@ -608,18 +592,26 @@ function NuevaDonacion({session, goto, onGuardado}){
   const [form, setForm] = useState(CAMPOS_INICIALES);
   const [bankQuery, setBankQuery] = useState("");
   const [bankOpen, setBankOpen] = useState(false);
+  const [otroFreqOpen, setOtroFreqOpen] = useState(false);
   const [err, setErr] = useState("");
   const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
+  const setDigits = (k, max)=>(e)=>setForm(f=>({...f,[k]:onlyDigits(e.target.value, max)}));
   const bancosFiltrados = BANCOS_ECUADOR.filter(b=>b.toLowerCase().includes(bankQuery.toLowerCase()));
   const montoFinal = form.cantidad==="otro" ? form.cantidadOtro : form.cantidad;
   const bancoFinal = form.banco==="Otro" ? form.bancoOtro.trim() : form.banco;
-  const requeridos = ["nombreDonador","cedulaDonador","celular","fechaNacimiento","direccion","numeroCuenta","tipoCuenta","nombreTitular","numeroTarjeta"];
+  const marcaFinal = form.marcaTarjeta==="Otro" ? form.marcaTarjetaOtro.trim() : form.marcaTarjeta;
+  const requeridos = ["nombreDonador","cedulaDonador","celular","email","fechaNacimiento","direccion","numeroCuenta","tipoCuenta","numeroTarjeta"];
 
   const validar = ()=>{
     for(const k of requeridos){ if(!form[k]) return "Falta completar un campo obligatorio."; }
+    if(!isTenDigits(form.cedulaDonador)) return "La cédula de identidad debe tener 10 dígitos numéricos.";
+    if(!isTenDigits(form.celular)) return "El celular debe tener 10 dígitos numéricos.";
+    if(!isValidEmail(form.email)) return "Ingresa un correo electrónico válido.";
     if(!bancoFinal) return "Selecciona o escribe el nombre del banco.";
+    if(!marcaFinal) return "Selecciona o escribe la marca de la tarjeta.";
     if(!/^(0[1-9]|1[0-2])\/\d{2}$/.test(form.fechaExpiracion)) return "La fecha de expiración debe tener el formato MM/AA (ej. 09/28).";
     if(!montoFinal) return "Selecciona o ingresa el monto a debitar.";
+    if(otroFreqOpen && !FRECUENCIAS_OTRO.includes(form.frecuencia)) return "Selecciona una frecuencia: Trimestral, Semestral o Anual.";
     if(!form.acepta) return "Debes marcar la casilla de autorización para continuar.";
     return "";
   };
@@ -634,7 +626,7 @@ function NuevaDonacion({session, goto, onGuardado}){
       lugarCaptacion:form.lugar, nombreDonador:form.nombreDonador, cedulaDonador:form.cedulaDonador,
       email:form.email, telefono:form.telefono, celular:form.celular, fechaNacimiento:form.fechaNacimiento,
       direccion:form.direccion, numeroCuenta:form.numeroCuenta, banco:bancoFinal, tipoCuenta:form.tipoCuenta,
-      numeroTarjeta:form.numeroTarjeta, nombreTitular:form.nombreTitular, fechaExpiracion:form.fechaExpiracion,
+      numeroTarjeta:form.numeroTarjeta, marcaTarjeta:marcaFinal, fechaExpiracion:form.fechaExpiracion,
       frecuencia:form.frecuencia, cantidad:montoFinal, nota:form.nota, aceptacion:"Sí", status:"pending",
     };
     await onGuardado(registro);
@@ -650,11 +642,11 @@ function NuevaDonacion({session, goto, onGuardado}){
         <div className="card stack">
           <div className="field"><label className="req">Nombre completo del donador</label><input type="text" value={form.nombreDonador} onChange={set("nombreDonador")}/></div>
           <div className="row2">
-            <div className="field"><label className="req">Cédula de identidad</label><input type="text" inputMode="numeric" value={form.cedulaDonador} onChange={set("cedulaDonador")}/></div>
-            <div className="field"><label className="req">Celular</label><input type="tel" value={form.celular} onChange={set("celular")}/></div>
+            <div className="field"><label className="req">Cédula de identidad</label><input type="text" inputMode="numeric" placeholder="10 dígitos" value={form.cedulaDonador} onChange={setDigits("cedulaDonador",10)}/></div>
+            <div className="field"><label className="req">Celular</label><input type="tel" inputMode="numeric" placeholder="10 dígitos" value={form.celular} onChange={setDigits("celular",10)}/></div>
           </div>
           <div className="row2">
-            <div className="field"><label>E-mail (opcional)</label><input type="email" value={form.email} onChange={set("email")}/></div>
+            <div className="field"><label className="req">E-mail</label><input type="email" value={form.email} onChange={set("email")}/></div>
             <div className="field"><label>Teléfono (opcional)</label><input type="tel" value={form.telefono} onChange={set("telefono")}/></div>
           </div>
           <div className="field"><label className="req">Fecha de nacimiento</label><input type="date" value={form.fechaNacimiento} onChange={set("fechaNacimiento")}/></div>
@@ -689,7 +681,13 @@ function NuevaDonacion({session, goto, onGuardado}){
             <label className="req">Tipo de cuenta</label>
             <div className="pill-group">{["Ahorros","Corriente"].map(t=>(<button key={t} type="button" className={"pill "+(form.tipoCuenta===t?"active":"")} onClick={()=>setForm(f=>({...f,tipoCuenta:t}))}>{t}</button>))}</div>
           </div>
-          <div className="field"><label className="req">Nombre en la tarjeta (titular)</label><input type="text" value={form.nombreTitular} onChange={set("nombreTitular")}/></div>
+          <div className="field">
+            <label className="req">Nombre en la tarjeta</label>
+            <div className="pill-group">
+              {MARCAS_TARJETA.map(m=>(<button key={m} type="button" className={"pill "+(form.marcaTarjeta===m?"active":"")} onClick={()=>setForm(f=>({...f,marcaTarjeta:m}))}>{m}</button>))}
+            </div>
+            {form.marcaTarjeta==="Otro" && <input style={{marginTop:10}} type="text" placeholder="Escribe la marca de la tarjeta" value={form.marcaTarjetaOtro} onChange={set("marcaTarjetaOtro")}/>}
+          </div>
           <div className="row2">
             <div className="field"><label className="req">Número de tarjeta</label><input type="text" inputMode="numeric" value={form.numeroTarjeta} onChange={set("numeroTarjeta")}/></div>
             <div className="field">
@@ -709,7 +707,19 @@ function NuevaDonacion({session, goto, onGuardado}){
         <div className="card stack">
           <div className="field">
             <label className="req">Frecuencia del débito</label>
-            <div className="pill-group">{["diaria","semanal","mensual"].map(f=>(<button key={f} type="button" className={"pill "+(form.frecuencia===f?"active":"")} onClick={()=>setForm(x=>({...x,frecuencia:f}))} style={{textTransform:"capitalize"}}>{f}</button>))}</div>
+            <div className="pill-group">
+              {[["mensual","Mensual"],["unica","Única"]].map(([k,l])=>(
+                <button key={k} type="button" className={"pill "+(form.frecuencia===k?"active":"")} onClick={()=>{setForm(f=>({...f,frecuencia:k})); setOtroFreqOpen(false);}}>{l}</button>
+              ))}
+              <button type="button" className={"pill "+((otroFreqOpen||FRECUENCIAS_OTRO.includes(form.frecuencia))?"active":"")} onClick={()=>setOtroFreqOpen(true)}>Otro</button>
+            </div>
+            {(otroFreqOpen || FRECUENCIAS_OTRO.includes(form.frecuencia)) && (
+              <div className="pill-group" style={{marginTop:10}}>
+                {[["trimestral","Trimestral"],["semestral","Semestral"],["anual","Anual"]].map(([k,l])=>(
+                  <button key={k} type="button" className={"pill "+(form.frecuencia===k?"active":"")} onClick={()=>setForm(f=>({...f,frecuencia:k}))}>{l}</button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="field">
             <label className="req">Cantidad a debitar</label>
@@ -815,8 +825,8 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
     : filtroFecha;
 
   const descargarInforme = ()=>{
-    const headers = ["Número de autorización única de débito","Nombre de Colaborador","Fecha de Captación","Lugar de Captación","Nombre Donador","Cédula de Donador","Email","Teléfono","Celular","Fecha de nacimiento","Dirección","Número cuenta bancaria","Banco","Ahorros/Corriente","Número de tarjeta","Nombre de Titular","Fecha de expiración","Frecuencia de débito","Cantidad a debitar","Aceptación"];
-    const rows = filtrados.map(r=>[r.numeroAutorizacion,r.nombreColaborador,r.fechaCaptacion,r.lugarCaptacion,r.nombreDonador,r.cedulaDonador,r.email,r.telefono,r.celular,r.fechaNacimiento,r.direccion,r.numeroCuenta,r.banco,r.tipoCuenta,r.numeroTarjeta,r.nombreTitular,r.fechaExpiracion,r.frecuencia,r.cantidad,r.aceptacion]);
+    const headers = ["Número de autorización única de débito","Nombre de Colaborador","Fecha de Captación","Lugar de Captación","Nombre Donador","Cédula de Donador","Email","Teléfono","Celular","Fecha de nacimiento","Dirección","Número cuenta bancaria","Banco","Ahorros/Corriente","Número de tarjeta","Marca de Tarjeta","Fecha de expiración","Frecuencia de débito","Cantidad a debitar","Aceptación"];
+    const rows = filtrados.map(r=>[r.numeroAutorizacion,r.nombreColaborador,r.fechaCaptacion,r.lugarCaptacion,r.nombreDonador,r.cedulaDonador,r.email,r.telefono,r.celular,r.fechaNacimiento,r.direccion,r.numeroCuenta,r.banco,r.tipoCuenta,r.numeroTarjeta,r.marcaTarjeta,r.fechaExpiracion,r.frecuencia,r.cantidad,r.aceptacion]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     // Columnas con ceros a la izquierda o formato especial (A, F, H, I, L, O, Q):
     // se fuerzan como texto para que Excel no las reinterprete como número o fecha.
@@ -885,40 +895,155 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
   );
 }
 
-function AdminColaboradores({queue, colaboradores, online, onRefreshRemote}){
+/* ========================= Gestión de usuarios (Admin) =========================
+   Único lugar donde se crean, editan, ven y eliminan las cuentas. Colaboradores
+   de campo: CRUD completo. Las 3 cuentas de Administrador son fijas (no se
+   crean ni eliminan aquí) pero sí son editables entre ellas. */
+function UsuarioForm({modo, usuario, onCancelar, onGuardar}){
+  const esNuevo = modo==="nuevo";
+  const esAdmin = usuario ? usuario.tipo==="Administrador" : false;
+  const [form, setForm] = useState({
+    correo: usuario ? usuario.correo : "",
+    nombre: usuario ? usuario.nombre : "",
+    apellido: usuario ? usuario.apellido : "",
+    cedula: usuario ? usuario.cedula : "",
+    celular: usuario ? usuario.celular : "",
+    password: "",
+    password2: "",
+  });
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
+  const setDigits = (k, max)=>(e)=>setForm(f=>({...f,[k]:onlyDigits(e.target.value, max)}));
+
+  const guardar = async ()=>{
+    setErr("");
+    if(!form.correo || !form.nombre || !form.apellido){ setErr("Completa correo, nombre y apellido."); return; }
+    if(!isValidEmail(form.correo)){ setErr("Ingresa un correo electrónico válido."); return; }
+    const cedulaOk = esAdmin ? (!form.cedula || isTenDigits(form.cedula)) : isTenDigits(form.cedula);
+    if(!cedulaOk){ setErr("La cédula debe tener 10 dígitos numéricos."); return; }
+    const celularOk = esAdmin ? (!form.celular || isTenDigits(form.celular)) : isTenDigits(form.celular);
+    if(!celularOk){ setErr("El celular debe tener 10 dígitos numéricos."); return; }
+    if(esNuevo && !form.password){ setErr("Ingresa una contraseña para el nuevo colaborador."); return; }
+    if(form.password && form.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
+    if(form.password && form.password!==form.password2){ setErr("Las contraseñas no coinciden."); return; }
+    setLoading(true);
+    try{ await onGuardar(form); }
+    catch(e){ setErr(e.message || "No se pudo guardar."); }
+    finally{ setLoading(false); }
+  };
+
+  return (
+    <div>
+      <Header title={esNuevo ? "Nuevo colaborador" : (esAdmin ? "Editar administrador" : "Ver / Editar colaborador")} onBack={onCancelar}/>
+      <div className="content no-nav">
+        {err && <div className="error-msg">{err}</div>}
+        <div className="card stack">
+          <div className="field"><label className="req">Correo</label><input type="email" value={form.correo} onChange={set("correo")}/></div>
+          <div className="row2">
+            <div className="field"><label className="req">Nombre</label><input type="text" value={form.nombre} onChange={set("nombre")}/></div>
+            <div className="field"><label className="req">Apellido</label><input type="text" value={form.apellido} onChange={set("apellido")}/></div>
+          </div>
+          <div className="row2">
+            <div className="field"><label className={esAdmin?"":"req"}>Cédula</label><input type="text" inputMode="numeric" placeholder="10 dígitos" value={form.cedula} onChange={setDigits("cedula",10)}/></div>
+            <div className="field"><label className={esAdmin?"":"req"}>Celular</label><input type="tel" inputMode="numeric" placeholder="10 dígitos" value={form.celular} onChange={setDigits("celular",10)}/></div>
+          </div>
+          <div style={{height:1, background:"var(--border)", margin:"4px 0"}}></div>
+          <div className="row2">
+            <div className="field"><label className={esNuevo?"req":""}>{esNuevo?"Contraseña":"Nueva contraseña"}</label><input type="password" value={form.password} onChange={set("password")}/></div>
+            <div className="field"><label className={esNuevo?"req":""}>Confirmar</label><input type="password" value={form.password2} onChange={set("password2")}/></div>
+          </div>
+          {!esNuevo && <p className="hint">Deja la contraseña en blanco para no cambiarla.</p>}
+          <button className="btn btn-primary" disabled={loading} onClick={guardar}>{loading ? "Guardando…" : (esNuevo?"Crear colaborador":"Guardar cambios")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, onEditar, onEliminar}){
+  const [vista, setVista] = useState("lista");
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [confirmarBorrado, setConfirmarBorrado] = useState(null);
+  const [err, setErr] = useState("");
+
   const equipo = colaboradores.filter(c=>c.tipo==="Colaborador de campo");
-  const porColaborador = equipo.map(c=>{
+  const admins = colaboradores.filter(c=>c.tipo==="Administrador");
+
+  const statsDe = (c)=>{
     const nombreCompleto = c.nombre+" "+c.apellido;
     const propios = queue.filter(r=>r.nombreColaborador===nombreCompleto);
     const totalMes = propios.filter(r=>inRange(r.fechaCaptacion,"mes")).reduce((s,r)=>s+Number(r.cantidad||0),0);
-    const pendientes = propios.filter(r=>r.status==="pending").length;
-    return {...c, totalMes, cantidad: propios.length, pendientes};
-  });
+    return {totalMes, cantidad:propios.length, pendientes: propios.filter(r=>r.status==="pending").length};
+  };
+
+  if(vista==="nuevo" || vista==="editar"){
+    return (
+      <UsuarioForm
+        modo={vista}
+        usuario={seleccionado}
+        onCancelar={()=>{setVista("lista"); setSeleccionado(null);}}
+        onGuardar={async (datos)=>{
+          if(vista==="nuevo") await onCrear(datos);
+          else await onEditar(seleccionado.id, datos);
+          setVista("lista"); setSeleccionado(null);
+        }}
+      />
+    );
+  }
+
   return (
     <div>
-      <Header title="Equipo" subtitle="Detalle de recolectoras en campo" online={online} showConn/>
+      <Header title="Usuarios" subtitle="Colaboradores y administradores" online={online} showConn/>
       <div className="content">
-        <div style={{marginBottom:16}}>
-          <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar equipo desde Sheets</button>
+        {err && <div className="error-msg">{err}</div>}
+        <div className="fab-space">
+          <button className="btn btn-gold" onClick={()=>{setSeleccionado(null); setErr(""); setVista("nuevo");}}><IconPlus/> Nuevo colaborador</button>
         </div>
-        {porColaborador.length===0 ? (
-          <div className="empty-state"><Seal size={56}/><p>Todavía no hay recolectoras registradas.<br/>Toca "Actualizar equipo desde Sheets" si ya se registraron desde otro celular.</p></div>
-        ) : porColaborador.map(c=>(
-          <div className="card" key={c.correo} style={{marginBottom:12}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
-              <div>
-                <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
-                <div className="meta">{c.correo}</div>
-                <div className="meta">{c.celular} · Cédula {c.cedula}</div>
+        <div style={{marginTop:12}}>
+          <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar desde Sheets</button>
+        </div>
+
+        <div className="section-title">Colaboradores de campo</div>
+        {equipo.length===0 ? (
+          <div className="empty-state"><Seal size={56}/><p>Todavía no hay colaboradores registrados.<br/>Usa "Nuevo colaborador" para crear el primero.</p></div>
+        ) : equipo.map(c=>{
+          const s = statsDe(c);
+          return (
+            <div className="card" key={c.id} style={{marginBottom:12}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+                <div>
+                  <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
+                  <div className="meta">{c.correo}</div>
+                  <div className="meta">{c.celular || "—"} · Cédula {c.cedula || "—"}</div>
+                </div>
+                <strong style={{color:"var(--blue)", fontSize:17, whiteSpace:"nowrap"}}>{fmtMoney(s.totalMes)}</strong>
               </div>
-              <strong style={{color:"var(--blue)", fontSize:17, whiteSpace:"nowrap"}}>{fmtMoney(c.totalMes)}</strong>
+              <div style={{display:"flex", gap:8, marginTop:12, flexWrap:"wrap"}}>
+                <span className="badge synced">{s.cantidad} donaciones</span>
+                {s.pendientes>0 && <span className="badge pending">{s.pendientes} pendientes</span>}
+              </div>
+              <div style={{display:"flex", gap:10, marginTop:14}}>
+                <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Ver / Editar</button>
+                {confirmarBorrado===c.id ? (
+                  <button className="btn btn-primary" style={{flex:1, background:"var(--danger)", boxShadow:"none"}} onClick={()=>{onEliminar(c.id); setConfirmarBorrado(null);}}>Confirmar eliminación</button>
+                ) : (
+                  <button className="btn btn-ghost" style={{flex:1, color:"var(--danger)", borderColor:"var(--danger)"}} onClick={()=>setConfirmarBorrado(c.id)}>Eliminar</button>
+                )}
+              </div>
             </div>
-            <div style={{display:"flex", gap:8, marginTop:12}}>
-              <span className="badge synced">{c.cantidad} donaciones</span>
-              {c.pendientes>0 && <span className="badge pending">{c.pendientes} pendientes</span>}
-            </div>
+          );
+        })}
+
+        <div className="section-title">Administradores</div>
+        {admins.map(c=>(
+          <div className="card" key={c.id} style={{marginBottom:12}}>
+            <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
+            <div className="meta">{c.correo}</div>
+            <button className="btn btn-ghost" style={{marginTop:12}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Editar</button>
           </div>
         ))}
+        <p className="footnote">Las cuentas de Administrador son fijas (3) y solo pueden editarse entre sí; no se crean ni eliminan desde aquí.</p>
       </div>
     </div>
   );
@@ -935,7 +1060,7 @@ function BottomNav({role, screen, goto}){
   const adminTabs = [
     {key:"admin-home", label:"Inicio", icon:IconHome},
     {key:"admin-reportes", label:"Reportes", icon:IconChart},
-    {key:"admin-colaboradores", label:"Equipo", icon:IconTeam},
+    {key:"admin-usuarios", label:"Usuarios", icon:IconTeam},
     {key:"cuenta", label:"Cuenta", icon:IconUser},
   ];
   const tabs = role==="Administrador" ? adminTabs : colabTabs;
@@ -969,7 +1094,8 @@ function App(){
   useEffect(()=>{
     (async ()=>{
       setQueue(await storeGet("donaciones_queue", []));
-      setColaboradores(await storeGet("colaboradores", []));
+      const cols = await ensureAdminSeeds(await storeGet("colaboradores", []));
+      setColaboradores(cols);
       if(navigator.onLine){
         fetchColaboradoresRemote();
         fetchDonacionesRemote();
@@ -1057,7 +1183,47 @@ function App(){
     fetchColaboradoresRemote();
   };
 
-  const showBottomNav = session && ["colab-home","colab-historial","admin-home","admin-reportes","admin-colaboradores","cuenta"].includes(screen);
+  /* ===== Gestión de usuarios (solo Administrador) ===== */
+  const onCrearColaborador = async (datos)=>{
+    const actuales = await storeGet("colaboradores", []);
+    if(actuales.some(c=>c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe un usuario con ese correo."); }
+    const passwordHash = await sha256(datos.password);
+    const nuevo = {id:uid("col"), correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash, tipo:"Colaborador de campo"};
+    const actualizados = [...actuales, nuevo];
+    setColaboradores(actualizados);
+    await storeSet("colaboradores", actualizados);
+    apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo}).catch(()=>{});
+  };
+
+  const onEditarColaborador = async (id, datos)=>{
+    const actuales = await storeGet("colaboradores", []);
+    if(actuales.some(c=>c.id!==id && c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe otro usuario con ese correo."); }
+    let passwordHash = null;
+    if(datos.password) passwordHash = await sha256(datos.password);
+    const actualizados = actuales.map(c=> c.id===id ? {...c, correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash: passwordHash || c.passwordHash} : c);
+    setColaboradores(actualizados);
+    await storeSet("colaboradores", actualizados);
+    const editado = actualizados.find(c=>c.id===id);
+    if(editado){
+      apiPost("actualizarColaborador", {correo:editado.correo, nombre:editado.nombre, apellido:editado.apellido, cedula:editado.cedula, celular:editado.celular, tipo:editado.tipo}).catch(()=>{});
+      if(session && session.id===id) setSession(editado);
+    }
+  };
+
+  const onEliminarColaborador = async (id)=>{
+    const actuales = await storeGet("colaboradores", []);
+    const objetivo = actuales.find(c=>c.id===id);
+    if(!objetivo || objetivo.tipo==="Administrador") return; // las cuentas de admin no se eliminan
+    const actualizados = actuales.filter(c=>c.id!==id);
+    setColaboradores(actualizados);
+    await storeSet("colaboradores", actualizados);
+    apiPost("eliminarColaborador", {correo:objetivo.correo}).catch(()=>{});
+    // Nota: las donaciones ya registradas por este colaborador conservan su
+    // historial (nombreColaborador queda guardado en cada registro), no se
+    // borran ni se reasignan.
+  };
+
+  const showBottomNav = session && ["colab-home","colab-historial","admin-home","admin-reportes","admin-usuarios","cuenta"].includes(screen);
 
   return (
     <div className="app-shell">
@@ -1069,7 +1235,7 @@ function App(){
       {screen==="confirmacion" && session && <Confirmacion goto={goto} session={session}/>}
       {screen==="admin-home" && session && <AdminHome queue={queue} colaboradores={colaboradores} online={online}/>}
       {screen==="admin-reportes" && session && <AdminReportes queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote}/>}
-      {screen==="admin-colaboradores" && session && <AdminColaboradores queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote}/>}
+      {screen==="admin-usuarios" && session && <AdminUsuarios queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote} onCrear={onCrearColaborador} onEditar={onEditarColaborador} onEliminar={onEliminarColaborador}/>}
       {screen==="cuenta" && session && <CuentaScreen session={session} goto={goto} onLogout={onLogout} install={install}/>}
       {showBottomNav && <BottomNav role={session.tipo} screen={screen} goto={goto}/>}
     </div>
