@@ -4,7 +4,6 @@ const APP_SHELL = [
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
-  "./logo.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -23,16 +22,14 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-/* Estrategia de red:
-   - API (Google Apps Script): siempre red primero, nunca caché, para no
-     mostrar datos financieros desactualizados.
-   - HTML / manifest (el "código" de la app): SIEMPRE red primero. Así,
-     cada vez que se sube una corrección a GitHub, el celular la recibe de
-     inmediato en cuanto haya conexión, en lugar de quedarse pegado en una
-     versión vieja guardada en caché. Solo se usa la copia en caché como
-     respaldo si el dispositivo está realmente sin conexión.
-   - Íconos/imágenes: caché primero (no cambian casi nunca, así cargan
-     instantáneo y ahorran datos). */
+/* Estrategia: network-first para TODO (API y app shell).
+   Si hay conexión, SIEMPRE se usa la versión más reciente publicada
+   (en GitHub / Apps Script) y se refresca la caché con esa copia.
+   Solo si no hay conexión se usa la última copia guardada localmente.
+   Esto evita que un dispositivo quede "pegado" con una versión vieja
+   de la app cuando se publica una actualización (el bug que causó que
+   Marca de Tarjeta y PasswordHash no se registraran: el equipo seguía
+   usando una copia cacheada de antes de esos cambios). */
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -48,38 +45,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  const isAppShellCode = req.mode === "navigate" ||
-    url.pathname.endsWith("index.html") ||
-    url.pathname.endsWith("manifest.json") ||
-    url.pathname === "/" ||
-    url.pathname.endsWith("/");
-
-  if (isAppShellCode) {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
-    return;
-  }
-
-  // Imágenes y otros recursos estáticos: caché primero.
   event.respondWith(
-    caches.match(req).then((cached) => {
-      return (
-        cached ||
-        fetch(req)
-          .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-            return res;
-          })
-          .catch(() => cached)
-      );
-    })
+    fetch(req)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
