@@ -705,7 +705,7 @@ function NuevaDonacion({session, goto, onGuardado}){
             <div className="pill-group">{["Ahorros","Corriente"].map(t=>(<button key={t} type="button" className={"pill "+(form.tipoCuenta===t?"active":"")} onClick={()=>setForm(f=>({...f,tipoCuenta:t}))}>{t}</button>))}</div>
           </div>
           <div className="field">
-            <label className="req">Nombre en la tarjeta</label>
+            <label className="req">Marca de Tarjeta</label>
             <div className="pill-group">
               {MARCAS_TARJETA.map(m=>(<button key={m} type="button" className={"pill "+(form.marcaTarjeta===m?"active":"")} onClick={()=>setForm(f=>({...f,marcaTarjeta:m}))}>{m}</button>))}
             </div>
