@@ -285,7 +285,11 @@ function isTenDigits(v){ return /^\d{10}$/.test(String(v||"")); }
 function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"")); }
 function onlyDigits(v, max){ return String(v||"").replace(/[^0-9]/g,"").slice(0, max); }
 /* Crea las 3 cuentas de Administrador precargadas (ADMIN_SEEDS) si todavía no
-   existen en este dispositivo/servidor. Se ejecuta al arrancar la app. */
+   existen en este dispositivo/servidor. Se ejecuta al arrancar la app. Si hay
+   conexión, también las registra en el Sheets (con su contraseña ya en
+   hash) para que desde el primer momento cualquier otro dispositivo pueda
+   reconocerlas al iniciar sesión, sin depender de que ese admin en
+   particular haya editado su cuenta antes. */
 async function ensureAdminSeeds(colaboradores){
   let cambios = false;
   const actualizados = [...colaboradores];
@@ -293,8 +297,12 @@ async function ensureAdminSeeds(colaboradores){
     const seed = ADMIN_SEEDS[i];
     if(!actualizados.some(c=>c.correo.toLowerCase()===seed.correo.toLowerCase())){
       const passwordHash = await sha256(seed.password);
-      actualizados.push({id:uid("col"), correo:seed.correo, nombre:"Administrador", apellido:String(i+1), cedula:"", celular:"", passwordHash, tipo:"Administrador"});
+      const nuevo = {id:uid("col"), correo:seed.correo, nombre:"Administrador", apellido:String(i+1), cedula:"", celular:"", passwordHash, tipo:"Administrador"};
+      actualizados.push(nuevo);
       cambios = true;
+      if(navigator.onLine){
+        apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo, passwordHash:nuevo.passwordHash}).catch(()=>{});
+      }
     }
   }
   if(cambios) await storeSet("colaboradores", actualizados);
@@ -424,8 +432,13 @@ function Landing({goto, install}){
 /* El registro público ("Registrarme") ya no existe: las cuentas de
    colaborador y administrador las crea/edita exclusivamente un
    Administrador desde la sección "Usuarios". Aquí solo hay inicio de
-   sesión y restablecimiento de contraseña (sin aprobación de nadie). */
-function ColabAuth({goto, onLogin}){
+   sesión y restablecimiento de contraseña (sin aprobación de nadie).
+
+   Antes de validar login o restablecimiento, si hay conexión, se refresca
+   la lista de colaboradores desde el Sheets (onRefrescar) para que un
+   dispositivo que nunca ha usado esta cuenta reciba la contraseña más
+   reciente en vez de fallar por no tenerla guardada localmente. */
+function ColabAuth({goto, onLogin, onRefrescar}){
   const [mode, setMode] = useState("login");
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -438,6 +451,7 @@ function ColabAuth({goto, onLogin}){
   const doLogin = async ()=>{
     setErr(""); setLoading(true);
     try{
+      if(navigator.onLine){ await onRefrescar().catch(()=>{}); }
       const colaboradores = await storeGet("colaboradores", []);
       const hash = await sha256(form.password);
       const found = colaboradores.find(c=>c.correo.toLowerCase()===form.correo.toLowerCase() && c.passwordHash===hash);
@@ -452,15 +466,24 @@ function ColabAuth({goto, onLogin}){
     if(resetForm.password !== resetForm.password2){ setErr("Las contraseñas no coinciden."); return; }
     setLoading(true);
     try{
+      if(navigator.onLine){ await onRefrescar().catch(()=>{}); }
       const colaboradores = await storeGet("colaboradores", []);
       const idx = colaboradores.findIndex(c=>c.correo.toLowerCase()===resetForm.correo.toLowerCase() && c.cedula===resetForm.cedula);
       if(idx===-1){
-        setErr("No se encontró una cuenta con ese correo y cédula en este dispositivo. Si te registraste desde otro celular, restablece la contraseña desde ese mismo dispositivo.");
+        setErr(navigator.onLine
+          ? "No se encontró una cuenta con ese correo y cédula. Verifica que estén escritos igual que los registró el Administrador."
+          : "No se encontró una cuenta con ese correo y cédula en este dispositivo, y no hay conexión para revisar el registro central. Conéctate a internet e inténtalo de nuevo.");
         setLoading(false); return;
       }
       const passwordHash = await sha256(resetForm.password);
       const actualizados = colaboradores.map((c,i)=> i===idx ? {...c, passwordHash} : c);
       await storeSet("colaboradores", actualizados);
+      const c = actualizados[idx];
+      // Empuja la contraseña nueva al Sheets para que quede disponible de
+      // inmediato en cualquier otro dispositivo (best-effort: si falla por
+      // estar sin conexión, el cambio queda guardado en este dispositivo
+      // igual, pero no se reintenta el envío más adelante).
+      apiPost("actualizarColaborador", {correoAnterior:c.correo, correo:c.correo, nombre:c.nombre, apellido:c.apellido, cedula:c.cedula, celular:c.celular, tipo:c.tipo, passwordHash}).catch(()=>{});
       setOkMsg("Contraseña actualizada. Ya puedes iniciar sesión.");
       setResetForm({correo:"",cedula:"",password:"",password2:""});
       setMode("login");
@@ -1107,9 +1130,13 @@ function App(){
   },[]);
 
   /* Trae el equipo completo desde el Google Sheets (todas las colaboradoras
-     registradas, sin importar en qué celular lo hicieron) y lo combina con
-     los datos guardados localmente (que incluyen la contraseña, la cual
-     nunca se envía ni se guarda en el servidor). */
+     registradas, sin importar en qué celular lo hicieron), incluida la
+     contraseña ya en hash (nunca en texto plano). El hash del servidor es
+     la fuente de verdad — así, si la contraseña se creó o cambió desde
+     OTRO dispositivo, este dispositivo la reconoce apenas se conecta. Solo
+     se usa el hash guardado localmente como respaldo si el servidor no
+     tiene uno todavía (por ejemplo, una cuenta creada sin conexión que aún
+     no ha terminado de sincronizarse). */
   const fetchColaboradoresRemote = async ()=>{
     try{
       const data = await apiGet({action:"listarColaboradores"});
@@ -1117,7 +1144,7 @@ function App(){
       const local = await storeGet("colaboradores", []);
       const combinados = data.colaboradores.map(remoto=>{
         const local_ = local.find(l=>l.correo.toLowerCase()===remoto.correo.toLowerCase());
-        return {...remoto, id: local_?.id || uid("col"), passwordHash: local_?.passwordHash || null};
+        return {...remoto, id: local_?.id || uid("col"), passwordHash: remoto.passwordHash || local_?.passwordHash || null};
       });
       // Conserva localmente cualquier colaborador aún no sincronizado (offline)
       local.forEach(l=>{
@@ -1192,7 +1219,10 @@ function App(){
     const actualizados = [...actuales, nuevo];
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
-    apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo}).catch(()=>{});
+    // Se manda passwordHash también: es lo que permite que, apenas haya
+    // conexión, cualquier otro dispositivo reconozca esta cuenta nueva sin
+    // esperar a que alguien la edite primero.
+    apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo, passwordHash:nuevo.passwordHash}).catch(()=>{});
   };
 
   const onEditarColaborador = async (id, datos)=>{
@@ -1209,7 +1239,11 @@ function App(){
       // Se manda el correo ANTERIOR además del nuevo: si el admin cambió el
       // correo durante la edición, el backend necesita el anterior para
       // encontrar la fila correcta en el Sheets (ver actualizarColaborador_).
-      apiPost("actualizarColaborador", {correoAnterior, correo:editado.correo, nombre:editado.nombre, apellido:editado.apellido, cedula:editado.cedula, celular:editado.celular, tipo:editado.tipo}).catch(()=>{});
+      // passwordHash solo se incluye si en este edit se puso una contraseña
+      // nueva — así el backend nunca borra sin querer la que ya tenía.
+      const payload = {correoAnterior, correo:editado.correo, nombre:editado.nombre, apellido:editado.apellido, cedula:editado.cedula, celular:editado.celular, tipo:editado.tipo};
+      if(passwordHash) payload.passwordHash = passwordHash;
+      apiPost("actualizarColaborador", payload).catch(()=>{});
       if(session && session.id===id) setSession(editado);
     }
   };
@@ -1232,7 +1266,7 @@ function App(){
   return (
     <div className="app-shell">
       {screen==="landing" && <Landing goto={goto} install={install}/>}
-      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin}/>}
+      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote}/>}
       {screen==="colab-home" && session && <ColabHome session={session} goto={goto} queue={queue} online={online}/>}
       {screen==="colab-historial" && session && <ColabHistorial session={session} goto={goto} queue={queue} online={online} syncing={syncing} onSync={onSync}/>}
       {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
