@@ -1198,6 +1198,7 @@ function App(){
   const onEditarColaborador = async (id, datos)=>{
     const actuales = await storeGet("colaboradores", []);
     if(actuales.some(c=>c.id!==id && c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe otro usuario con ese correo."); }
+    const correoAnterior = (actuales.find(c=>c.id===id) || {}).correo || datos.correo;
     let passwordHash = null;
     if(datos.password) passwordHash = await sha256(datos.password);
     const actualizados = actuales.map(c=> c.id===id ? {...c, correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash: passwordHash || c.passwordHash} : c);
@@ -1205,7 +1206,10 @@ function App(){
     await storeSet("colaboradores", actualizados);
     const editado = actualizados.find(c=>c.id===id);
     if(editado){
-      apiPost("actualizarColaborador", {correo:editado.correo, nombre:editado.nombre, apellido:editado.apellido, cedula:editado.cedula, celular:editado.celular, tipo:editado.tipo}).catch(()=>{});
+      // Se manda el correo ANTERIOR además del nuevo: si el admin cambió el
+      // correo durante la edición, el backend necesita el anterior para
+      // encontrar la fila correcta en el Sheets (ver actualizarColaborador_).
+      apiPost("actualizarColaborador", {correoAnterior, correo:editado.correo, nombre:editado.nombre, apellido:editado.apellido, cedula:editado.cedula, celular:editado.celular, tipo:editado.tipo}).catch(()=>{});
       if(session && session.id===id) setSession(editado);
     }
   };
