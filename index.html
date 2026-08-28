@@ -1043,6 +1043,7 @@ function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, 
                 {s.pendientes>0 && <span className="badge pending">{s.pendientes} pendientes</span>}
                 {c.syncStatus==="pending" && <span className="badge pending">Cuenta sin sincronizar aún</span>}
               </div>
+              {c.syncError && <div style={{fontSize:12.5, color:"var(--danger)", marginTop:8}}>Error al sincronizar: {c.syncError}</div>}
               <div style={{display:"flex", gap:10, marginTop:14}}>
                 <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Ver / Editar</button>
                 {confirmarBorrado===c.id ? (
@@ -1061,6 +1062,7 @@ function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, 
             <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
             <div className="meta">{c.correo}</div>
             {c.syncStatus==="pending" && <div style={{marginTop:8}}><span className="badge pending">Cuenta sin sincronizar aún</span></div>}
+            {c.syncError && <div style={{fontSize:12.5, color:"var(--danger)", marginTop:8}}>Error al sincronizar: {c.syncError}</div>}
             <button className="btn btn-ghost" style={{marginTop:12}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Editar</button>
           </div>
         ))}
@@ -1179,15 +1181,34 @@ function App(){
     if(pendientes.length>0){
       let actualizado = current;
       for(const c of pendientes){
+        const correoAnterior = c.correoAnterior || c.correo;
+        const huboCambioDeCorreo = correoAnterior.toLowerCase() !== c.correo.toLowerCase();
         try{
-          await apiPost("actualizarColaborador", {
-            correoAnterior: c.correoAnterior || c.correo,
-            correo: c.correo, nombre: c.nombre, apellido: c.apellido,
-            cedula: c.cedula, celular: c.celular, tipo: c.tipo,
-            passwordHash: c.passwordHash || "",
-          });
-          actualizado = actualizado.map(x=>x.id===c.id ? {...x, syncStatus:"synced", correoAnterior:c.correo} : x);
-        }catch(e){ /* se reintenta la próxima vez que haya conexión */ }
+          if(huboCambioDeCorreo){
+            // El correo cambió: el backend necesita el correo ANTERIOR para
+            // encontrar la fila correcta y renombrarla.
+            await apiPost("actualizarColaborador", {
+              correoAnterior, correo: c.correo, nombre: c.nombre, apellido: c.apellido,
+              cedula: c.cedula, celular: c.celular, tipo: c.tipo,
+              passwordHash: c.passwordHash || "",
+            });
+          } else {
+            // Sin cambio de correo: "registrarColaborador" hace upsert por
+            // correo (crea la fila si no existe, la actualiza si ya
+            // existe). Es la acción más simple y más probada — sirve igual
+            // para una cuenta nueva que para editar una ya existente.
+            await apiPost("registrarColaborador", {
+              correo: c.correo, nombre: c.nombre, apellido: c.apellido,
+              cedula: c.cedula, celular: c.celular, tipo: c.tipo,
+              passwordHash: c.passwordHash || "",
+            });
+          }
+          actualizado = actualizado.map(x=>x.id===c.id ? {...x, syncStatus:"synced", correoAnterior:c.correo, syncError:null} : x);
+        }catch(e){
+          const msg = (e && e.message) || "Error desconocido";
+          console.error("No se pudo sincronizar el colaborador", c.correo, "→", msg);
+          actualizado = actualizado.map(x=>x.id===c.id ? {...x, syncError: msg} : x);
+        }
       }
       setColaboradores(actualizado);
       await storeSet("colaboradores", actualizado);
@@ -1198,7 +1219,9 @@ function App(){
         try{
           await apiPost("eliminarColaborador", {correo});
           restantes = restantes.filter(x=>x!==correo);
-        }catch(e){ /* se reintenta luego */ }
+        }catch(e){
+          console.error("No se pudo eliminar el colaborador", correo, "→", (e&&e.message)||e);
+        }
       }
       await storeSet("colaboradores_pendientes_eliminar", restantes);
     }
