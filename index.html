@@ -285,11 +285,10 @@ function isTenDigits(v){ return /^\d{10}$/.test(String(v||"")); }
 function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"")); }
 function onlyDigits(v, max){ return String(v||"").replace(/[^0-9]/g,"").slice(0, max); }
 /* Crea las 3 cuentas de Administrador precargadas (ADMIN_SEEDS) si todavía no
-   existen en este dispositivo/servidor. Se ejecuta al arrancar la app. Si hay
-   conexión, también las registra en el Sheets (con su contraseña ya en
-   hash) para que desde el primer momento cualquier otro dispositivo pueda
-   reconocerlas al iniciar sesión, sin depender de que ese admin en
-   particular haya editado su cuenta antes. */
+   existen en este dispositivo/servidor. Se ejecuta al arrancar la app.
+   Quedan marcadas con syncStatus "pending": quien las termina de enviar al
+   Sheets (con reintento incluido si falla) es trySyncColaboradores, para no
+   duplicar esa lógica en dos sitios distintos. */
 async function ensureAdminSeeds(colaboradores){
   let cambios = false;
   const actualizados = [...colaboradores];
@@ -297,12 +296,9 @@ async function ensureAdminSeeds(colaboradores){
     const seed = ADMIN_SEEDS[i];
     if(!actualizados.some(c=>c.correo.toLowerCase()===seed.correo.toLowerCase())){
       const passwordHash = await sha256(seed.password);
-      const nuevo = {id:uid("col"), correo:seed.correo, nombre:"Administrador", apellido:String(i+1), cedula:"", celular:"", passwordHash, tipo:"Administrador"};
+      const nuevo = {id:uid("col"), correo:seed.correo, nombre:"Administrador", apellido:String(i+1), cedula:"", celular:"", passwordHash, tipo:"Administrador", syncStatus:"pending", correoAnterior:seed.correo};
       actualizados.push(nuevo);
       cambios = true;
-      if(navigator.onLine){
-        apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo, passwordHash:nuevo.passwordHash}).catch(()=>{});
-      }
     }
   }
   if(cambios) await storeSet("colaboradores", actualizados);
@@ -438,7 +434,7 @@ function Landing({goto, install}){
    la lista de colaboradores desde el Sheets (onRefrescar) para que un
    dispositivo que nunca ha usado esta cuenta reciba la contraseña más
    reciente en vez de fallar por no tenerla guardada localmente. */
-function ColabAuth({goto, onLogin, onRefrescar}){
+function ColabAuth({goto, onLogin, onRefrescar, onSincronizar}){
   const [mode, setMode] = useState("login");
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -476,14 +472,14 @@ function ColabAuth({goto, onLogin, onRefrescar}){
         setLoading(false); return;
       }
       const passwordHash = await sha256(resetForm.password);
-      const actualizados = colaboradores.map((c,i)=> i===idx ? {...c, passwordHash} : c);
+      const actualizados = colaboradores.map((c,i)=> i===idx ? {...c, passwordHash, syncStatus:"pending", correoAnterior: c.correoAnterior || c.correo} : c);
       await storeSet("colaboradores", actualizados);
-      const c = actualizados[idx];
-      // Empuja la contraseña nueva al Sheets para que quede disponible de
-      // inmediato en cualquier otro dispositivo (best-effort: si falla por
-      // estar sin conexión, el cambio queda guardado en este dispositivo
-      // igual, pero no se reintenta el envío más adelante).
-      apiPost("actualizarColaborador", {correoAnterior:c.correo, correo:c.correo, nombre:c.nombre, apellido:c.apellido, cedula:c.cedula, celular:c.celular, tipo:c.tipo, passwordHash}).catch(()=>{});
+      // Empuja la contraseña nueva al Sheets con el mismo mecanismo de
+      // reintento que usa el resto de la app (trySyncColaboradores): si en
+      // este momento no hay conexión o falla el envío, queda marcada como
+      // pendiente y se reintenta sola apenas vuelva la conexión — no se
+      // pierde en silencio como antes.
+      if(onSincronizar) await onSincronizar();
       setOkMsg("Contraseña actualizada. Ya puedes iniciar sesión.");
       setResetForm({correo:"",cedula:"",password:"",password2:""});
       setMode("login");
@@ -1045,6 +1041,7 @@ function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, 
               <div style={{display:"flex", gap:8, marginTop:12, flexWrap:"wrap"}}>
                 <span className="badge synced">{s.cantidad} donaciones</span>
                 {s.pendientes>0 && <span className="badge pending">{s.pendientes} pendientes</span>}
+                {c.syncStatus==="pending" && <span className="badge pending">Cuenta sin sincronizar aún</span>}
               </div>
               <div style={{display:"flex", gap:10, marginTop:14}}>
                 <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Ver / Editar</button>
@@ -1063,10 +1060,11 @@ function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, 
           <div className="card" key={c.id} style={{marginBottom:12}}>
             <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
             <div className="meta">{c.correo}</div>
+            {c.syncStatus==="pending" && <div style={{marginTop:8}}><span className="badge pending">Cuenta sin sincronizar aún</span></div>}
             <button className="btn btn-ghost" style={{marginTop:12}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Editar</button>
           </div>
         ))}
-        <p className="footnote">Las cuentas de Administrador son fijas (3) y solo pueden editarse entre sí; no se crean ni eliminan desde aquí.</p>
+        <p className="footnote">Las cuentas de Administrador son fijas (3) y solo pueden editarse entre sí; no se crean ni eliminan desde aquí. Si ves "Cuenta sin sincronizar aún", conéctate a internet un momento — se envía sola.</p>
       </div>
     </div>
   );
@@ -1117,10 +1115,18 @@ function App(){
   useEffect(()=>{
     (async ()=>{
       setQueue(await storeGet("donaciones_queue", []));
-      const cols = await ensureAdminSeeds(await storeGet("colaboradores", []));
+      // Los registros guardados antes de esta versión no tienen syncStatus:
+      // se asumen ya sincronizados (es lo que eran hasta ahora) para no
+      // forzar un reenvío masivo innecesario la primera vez que abren la app.
+      const previos = (await storeGet("colaboradores", [])).map(c=>
+        c.syncStatus ? c : {...c, syncStatus:"synced", correoAnterior: c.correoAnterior || c.correo}
+      );
+      const cols = await ensureAdminSeeds(previos);
       setColaboradores(cols);
+      await storeSet("colaboradores", cols);
       if(navigator.onLine){
-        fetchColaboradoresRemote();
+        await fetchColaboradoresRemote();
+        await trySyncColaboradores();
         fetchDonacionesRemote();
       }
     })();
@@ -1131,29 +1137,72 @@ function App(){
 
   /* Trae el equipo completo desde el Google Sheets (todas las colaboradoras
      registradas, sin importar en qué celular lo hicieron), incluida la
-     contraseña ya en hash (nunca en texto plano). El hash del servidor es
-     la fuente de verdad — así, si la contraseña se creó o cambió desde
-     OTRO dispositivo, este dispositivo la reconoce apenas se conecta. Solo
-     se usa el hash guardado localmente como respaldo si el servidor no
-     tiene uno todavía (por ejemplo, una cuenta creada sin conexión que aún
-     no ha terminado de sincronizarse). */
+     contraseña ya en hash (nunca en texto plano). El Sheets es la FUENTE DE
+     VERDAD: si alguien ya no aparece ahí (se eliminó desde la app en otro
+     dispositivo, o se borró la fila a mano en el Excel), este dispositivo
+     también debe dejar de mostrarlo. Lo único que se conserva localmente
+     sin estar en el Sheets es lo que este mismo dispositivo creó/editó y
+     todavía no ha logrado enviar (syncStatus "pending") — eso sí se
+     mantiene, para no perder trabajo hecho sin conexión. */
   const fetchColaboradoresRemote = async ()=>{
     try{
       const data = await apiGet({action:"listarColaboradores"});
-      if(!data.colaboradores) return;
+      if(!data.colaboradores) return null;
       const local = await storeGet("colaboradores", []);
-      const combinados = data.colaboradores.map(remoto=>{
-        const local_ = local.find(l=>l.correo.toLowerCase()===remoto.correo.toLowerCase());
-        return {...remoto, id: local_?.id || uid("col"), passwordHash: remoto.passwordHash || local_?.passwordHash || null};
-      });
-      // Conserva localmente cualquier colaborador aún no sincronizado (offline)
+      const pendientesEliminar = (await storeGet("colaboradores_pendientes_eliminar", [])).map(x=>String(x).toLowerCase());
+      const combinados = data.colaboradores
+        .filter(remoto=>!pendientesEliminar.includes(String(remoto.correo).toLowerCase()))
+        .map(remoto=>{
+          const local_ = local.find(l=>l.correo.toLowerCase()===remoto.correo.toLowerCase());
+          return {...remoto, id: local_?.id || uid("col"), passwordHash: remoto.passwordHash || local_?.passwordHash || null, syncStatus:"synced", correoAnterior: remoto.correo};
+        });
       local.forEach(l=>{
-        if(!combinados.some(c=>c.correo.toLowerCase()===l.correo.toLowerCase())) combinados.push(l);
+        if(l.syncStatus==="pending" && !combinados.some(c=>c.correo.toLowerCase()===l.correo.toLowerCase())){
+          combinados.push(l);
+        }
       });
       setColaboradores(combinados);
       await storeSet("colaboradores", combinados);
-    }catch(e){ /* sin conexión o backend no configurado */ }
+      return combinados;
+    }catch(e){ return null; /* sin conexión o backend no configurado */ }
   };
+
+  /* Empuja al Sheets cualquier cambio de colaboradores que quedó pendiente
+     (cuenta nueva, edición, restablecimiento de contraseña o eliminación
+     que no se pudo enviar en el momento por falta de conexión o un error
+     de red). Se reintenta cada vez que hay conexión, así nadie tiene que
+     acordarse de reintentar manualmente. */
+  const trySyncColaboradores = useCallback(async ()=>{
+    const current = await storeGet("colaboradores", []);
+    const pendientes = current.filter(c=>c.syncStatus==="pending");
+    const pendientesEliminar = await storeGet("colaboradores_pendientes_eliminar", []);
+    if(pendientes.length>0){
+      let actualizado = current;
+      for(const c of pendientes){
+        try{
+          await apiPost("actualizarColaborador", {
+            correoAnterior: c.correoAnterior || c.correo,
+            correo: c.correo, nombre: c.nombre, apellido: c.apellido,
+            cedula: c.cedula, celular: c.celular, tipo: c.tipo,
+            passwordHash: c.passwordHash || "",
+          });
+          actualizado = actualizado.map(x=>x.id===c.id ? {...x, syncStatus:"synced", correoAnterior:c.correo} : x);
+        }catch(e){ /* se reintenta la próxima vez que haya conexión */ }
+      }
+      setColaboradores(actualizado);
+      await storeSet("colaboradores", actualizado);
+    }
+    if(pendientesEliminar.length>0){
+      let restantes = [...pendientesEliminar];
+      for(const correo of pendientesEliminar){
+        try{
+          await apiPost("eliminarColaborador", {correo});
+          restantes = restantes.filter(x=>x!==correo);
+        }catch(e){ /* se reintenta luego */ }
+      }
+      await storeSet("colaboradores_pendientes_eliminar", restantes);
+    }
+  },[]);
 
   /* Trae TODAS las donaciones ya registradas en el Google Sheets (captadas
      desde cualquier celular) y las combina con lo que este dispositivo
@@ -1176,7 +1225,7 @@ function App(){
   const goto = useCallback((s)=>{ setScreen(s); window.scrollTo({top:0}); },[]);
   const onLogin = (col)=>{
     setSession(col); goto(col.tipo==="Administrador" ? "admin-home" : "colab-home");
-    if(navigator.onLine){ fetchColaboradoresRemote(); fetchDonacionesRemote(); }
+    if(navigator.onLine){ fetchColaboradoresRemote().then(()=>trySyncColaboradores()); fetchDonacionesRemote(); }
   };
   const onLogout = ()=>{ setSession(null); goto("landing"); };
 
@@ -1203,49 +1252,43 @@ function App(){
     if(online) trySync(nueva);
   };
 
-  useEffect(()=>{ if(online) trySync(queue); /* eslint-disable-next-line */ },[online]);
+  useEffect(()=>{ if(online){ trySync(queue); trySyncColaboradores(); } /* eslint-disable-next-line */ },[online]);
   const onSync = ()=>trySync(queue);
   const onRefreshRemote = async ()=>{
     await fetchDonacionesRemote();
-    fetchColaboradoresRemote();
+    await fetchColaboradoresRemote();
+    await trySyncColaboradores();
   };
 
-  /* ===== Gestión de usuarios (solo Administrador) ===== */
+  /* ===== Gestión de usuarios (solo Administrador) =====
+     Crear/editar/eliminar quedan marcados localmente como "pending" y se
+     empujan de inmediato con trySyncColaboradores (que reintenta solo, cada
+     vez que hay conexión, hasta que confirme éxito) en vez del anterior
+     "fire and forget" que, si fallaba, se perdía en silencio para siempre. */
   const onCrearColaborador = async (datos)=>{
     const actuales = await storeGet("colaboradores", []);
     if(actuales.some(c=>c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe un usuario con ese correo."); }
     const passwordHash = await sha256(datos.password);
-    const nuevo = {id:uid("col"), correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash, tipo:"Colaborador de campo"};
+    const nuevo = {id:uid("col"), correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash, tipo:"Colaborador de campo", syncStatus:"pending", correoAnterior:datos.correo};
     const actualizados = [...actuales, nuevo];
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
-    // Se manda passwordHash también: es lo que permite que, apenas haya
-    // conexión, cualquier otro dispositivo reconozca esta cuenta nueva sin
-    // esperar a que alguien la edite primero.
-    apiPost("registrarColaborador", {correo:nuevo.correo, nombre:nuevo.nombre, apellido:nuevo.apellido, cedula:nuevo.cedula, celular:nuevo.celular, tipo:nuevo.tipo, passwordHash:nuevo.passwordHash}).catch(()=>{});
+    await trySyncColaboradores();
   };
 
   const onEditarColaborador = async (id, datos)=>{
     const actuales = await storeGet("colaboradores", []);
     if(actuales.some(c=>c.id!==id && c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe otro usuario con ese correo."); }
-    const correoAnterior = (actuales.find(c=>c.id===id) || {}).correo || datos.correo;
-    let passwordHash = null;
+    const anterior = actuales.find(c=>c.id===id) || {};
+    const correoAnterior = anterior.correoAnterior || anterior.correo || datos.correo;
+    let passwordHash = anterior.passwordHash || null;
     if(datos.password) passwordHash = await sha256(datos.password);
-    const actualizados = actuales.map(c=> c.id===id ? {...c, correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash: passwordHash || c.passwordHash} : c);
+    const actualizados = actuales.map(c=> c.id===id ? {...c, correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash, syncStatus:"pending", correoAnterior} : c);
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
     const editado = actualizados.find(c=>c.id===id);
-    if(editado){
-      // Se manda el correo ANTERIOR además del nuevo: si el admin cambió el
-      // correo durante la edición, el backend necesita el anterior para
-      // encontrar la fila correcta en el Sheets (ver actualizarColaborador_).
-      // passwordHash solo se incluye si en este edit se puso una contraseña
-      // nueva — así el backend nunca borra sin querer la que ya tenía.
-      const payload = {correoAnterior, correo:editado.correo, nombre:editado.nombre, apellido:editado.apellido, cedula:editado.cedula, celular:editado.celular, tipo:editado.tipo};
-      if(passwordHash) payload.passwordHash = passwordHash;
-      apiPost("actualizarColaborador", payload).catch(()=>{});
-      if(session && session.id===id) setSession(editado);
-    }
+    if(editado && session && session.id===id) setSession(editado);
+    await trySyncColaboradores();
   };
 
   const onEliminarColaborador = async (id)=>{
@@ -1255,7 +1298,12 @@ function App(){
     const actualizados = actuales.filter(c=>c.id!==id);
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
-    apiPost("eliminarColaborador", {correo:objetivo.correo}).catch(()=>{});
+    const pendientesEliminar = await storeGet("colaboradores_pendientes_eliminar", []);
+    const correoLower = objetivo.correo.toLowerCase();
+    if(!pendientesEliminar.includes(correoLower)){
+      await storeSet("colaboradores_pendientes_eliminar", [...pendientesEliminar, correoLower]);
+    }
+    await trySyncColaboradores();
     // Nota: las donaciones ya registradas por este colaborador conservan su
     // historial (nombreColaborador queda guardado en cada registro), no se
     // borran ni se reasignan.
@@ -1266,7 +1314,7 @@ function App(){
   return (
     <div className="app-shell">
       {screen==="landing" && <Landing goto={goto} install={install}/>}
-      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote}/>}
+      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote} onSincronizar={trySyncColaboradores}/>}
       {screen==="colab-home" && session && <ColabHome session={session} goto={goto} queue={queue} online={online}/>}
       {screen==="colab-historial" && session && <ColabHistorial session={session} goto={goto} queue={queue} online={online} syncing={syncing} onSync={onSync}/>}
       {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
