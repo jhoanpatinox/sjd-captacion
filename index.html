@@ -236,7 +236,7 @@ const {useState, useEffect, useMemo, useCallback} = React;
    CONFIGURACIÓN — Backend real conectado (Google Apps Script Web App)
    ========================================================================= */
 const CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbwWe9Xs3HT-fhGG0jV_Su_KHHDzVErs-9xRd5wrw4ZK4FwtCK6MtF_ftZbHvBHrGPku/exec",
+  API_URL: "https://script.google.com/macros/s/AKfycbx0VfVBJcX8skmRXO36889GDNoy4Rr1OjxkLqIqCytNvlJvQVZI-H8x3amPBfTFOm_h/exec",
 };
 
 const BANCOS_ECUADOR = [
@@ -920,16 +920,19 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
    crean ni eliminan aquí) pero sí son editables entre ellas. */
 function UsuarioForm({modo, usuario, onCancelar, onGuardar}){
   const esNuevo = modo==="nuevo";
-  const esAdmin = usuario ? usuario.tipo==="Administrador" : false;
   const [form, setForm] = useState({
     correo: usuario ? usuario.correo : "",
     nombre: usuario ? usuario.nombre : "",
     apellido: usuario ? usuario.apellido : "",
     cedula: usuario ? usuario.cedula : "",
     celular: usuario ? usuario.celular : "",
+    tipo: usuario ? usuario.tipo : "Colaborador de campo",
     password: "",
     password2: "",
   });
+  // En modo "nuevo" el tipo lo elige el Administrador en el propio
+  // formulario; al editar, el tipo ya quedó fijado al crear la cuenta.
+  const tipoEsAdmin = form.tipo==="Administrador";
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
@@ -939,11 +942,11 @@ function UsuarioForm({modo, usuario, onCancelar, onGuardar}){
     setErr("");
     if(!form.correo || !form.nombre || !form.apellido){ setErr("Completa correo, nombre y apellido."); return; }
     if(!isValidEmail(form.correo)){ setErr("Ingresa un correo electrónico válido."); return; }
-    const cedulaOk = esAdmin ? (!form.cedula || isTenDigits(form.cedula)) : isTenDigits(form.cedula);
+    const cedulaOk = tipoEsAdmin ? (!form.cedula || isTenDigits(form.cedula)) : isTenDigits(form.cedula);
     if(!cedulaOk){ setErr("La cédula debe tener 10 dígitos numéricos."); return; }
-    const celularOk = esAdmin ? (!form.celular || isTenDigits(form.celular)) : isTenDigits(form.celular);
+    const celularOk = tipoEsAdmin ? (!form.celular || isTenDigits(form.celular)) : isTenDigits(form.celular);
     if(!celularOk){ setErr("El celular debe tener 10 dígitos numéricos."); return; }
-    if(esNuevo && !form.password){ setErr("Ingresa una contraseña para el nuevo colaborador."); return; }
+    if(esNuevo && !form.password){ setErr("Ingresa una contraseña para el nuevo usuario."); return; }
     if(form.password && form.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
     if(form.password && form.password!==form.password2){ setErr("Las contraseñas no coinciden."); return; }
     setLoading(true);
@@ -954,18 +957,31 @@ function UsuarioForm({modo, usuario, onCancelar, onGuardar}){
 
   return (
     <div>
-      <Header title={esNuevo ? "Nuevo colaborador" : (esAdmin ? "Editar administrador" : "Ver / Editar colaborador")} onBack={onCancelar}/>
-      <div className="content no-nav">
+      <Header title={esNuevo ? (tipoEsAdmin?"Nuevo administrador":"Nuevo colaborador") : (tipoEsAdmin ? "Editar administrador" : "Ver / Editar colaborador")} onBack={onCancelar}/>
+      {/* Esta pantalla vive dentro de "Usuarios", que sí tiene la barra de
+          navegación inferior fija — por eso usa "content" (con el espacio
+          reservado para esa barra) y no "content no-nav", que dejaba el
+          botón de guardar tapado detrás de la barra. */}
+      <div className="content">
         {err && <div className="error-msg">{err}</div>}
         <div className="card stack">
+          {esNuevo && (
+            <div className="field">
+              <label className="req">Tipo de usuario</label>
+              <div className="pill-group">
+                <button type="button" className={"pill" + (form.tipo==="Colaborador de campo"?" active":"")} onClick={()=>setForm(f=>({...f, tipo:"Colaborador de campo"}))}>Colaborador de campo</button>
+                <button type="button" className={"pill" + (form.tipo==="Administrador"?" active":"")} onClick={()=>setForm(f=>({...f, tipo:"Administrador"}))}>Administrador</button>
+              </div>
+            </div>
+          )}
           <div className="field"><label className="req">Correo</label><input type="email" value={form.correo} onChange={set("correo")}/></div>
           <div className="row2">
             <div className="field"><label className="req">Nombre</label><input type="text" value={form.nombre} onChange={set("nombre")}/></div>
             <div className="field"><label className="req">Apellido</label><input type="text" value={form.apellido} onChange={set("apellido")}/></div>
           </div>
           <div className="row2">
-            <div className="field"><label className={esAdmin?"":"req"}>Cédula</label><input type="text" inputMode="numeric" placeholder="10 dígitos" value={form.cedula} onChange={setDigits("cedula",10)}/></div>
-            <div className="field"><label className={esAdmin?"":"req"}>Celular</label><input type="tel" inputMode="numeric" placeholder="10 dígitos" value={form.celular} onChange={setDigits("celular",10)}/></div>
+            <div className="field"><label className={tipoEsAdmin?"":"req"}>Cédula</label><input type="text" inputMode="numeric" placeholder="10 dígitos" value={form.cedula} onChange={setDigits("cedula",10)}/></div>
+            <div className="field"><label className={tipoEsAdmin?"":"req"}>Celular</label><input type="tel" inputMode="numeric" placeholder="10 dígitos" value={form.celular} onChange={setDigits("celular",10)}/></div>
           </div>
           <div style={{height:1, background:"var(--border)", margin:"4px 0"}}></div>
           <div className="row2">
@@ -973,18 +989,25 @@ function UsuarioForm({modo, usuario, onCancelar, onGuardar}){
             <div className="field"><label className={esNuevo?"req":""}>Confirmar</label><input type="password" value={form.password2} onChange={set("password2")}/></div>
           </div>
           {!esNuevo && <p className="hint">Deja la contraseña en blanco para no cambiarla.</p>}
-          <button className="btn btn-primary" disabled={loading} onClick={guardar}>{loading ? "Guardando…" : (esNuevo?"Crear colaborador":"Guardar cambios")}</button>
+          <button className="btn btn-primary" disabled={loading} onClick={guardar}>{loading ? "Guardando…" : (esNuevo?(tipoEsAdmin?"Crear administrador":"Crear colaborador"):"Guardar cambios")}</button>
         </div>
       </div>
     </div>
   );
 }
 
-function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, onEditar, onEliminar}){
+function AdminUsuarios({queue, colaboradores, online, session, onRefreshRemote, onCrear, onEditar, onEliminar}){
   const [vista, setVista] = useState("lista");
   const [seleccionado, setSeleccionado] = useState(null);
   const [confirmarBorrado, setConfirmarBorrado] = useState(null);
   const [err, setErr] = useState("");
+
+  const eliminar = async (id)=>{
+    setErr("");
+    try{ await onEliminar(id); }
+    catch(e){ setErr(e.message || "No se pudo eliminar."); }
+    finally{ setConfirmarBorrado(null); }
+  };
 
   const equipo = colaboradores.filter(c=>c.tipo==="Colaborador de campo");
   const admins = colaboradores.filter(c=>c.tipo==="Administrador");
@@ -1047,7 +1070,7 @@ function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, 
               <div style={{display:"flex", gap:10, marginTop:14}}>
                 <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Ver / Editar</button>
                 {confirmarBorrado===c.id ? (
-                  <button className="btn btn-primary" style={{flex:1, background:"var(--danger)", boxShadow:"none"}} onClick={()=>{onEliminar(c.id); setConfirmarBorrado(null);}}>Confirmar eliminación</button>
+                  <button className="btn btn-primary" style={{flex:1, background:"var(--danger)", boxShadow:"none"}} onClick={()=>eliminar(c.id)}>Confirmar eliminación</button>
                 ) : (
                   <button className="btn btn-ghost" style={{flex:1, color:"var(--danger)", borderColor:"var(--danger)"}} onClick={()=>setConfirmarBorrado(c.id)}>Eliminar</button>
                 )}
@@ -1057,16 +1080,26 @@ function AdminUsuarios({queue, colaboradores, online, onRefreshRemote, onCrear, 
         })}
 
         <div className="section-title">Administradores</div>
-        {admins.map(c=>(
+        {admins.map(c=>{
+          const esYo = session && session.id===c.id;
+          return (
           <div className="card" key={c.id} style={{marginBottom:12}}>
-            <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}</div>
+            <div className="name" style={{fontSize:16}}>{c.nombre} {c.apellido}{esYo && <span style={{color:"var(--ink-faint)", fontWeight:400}}> (tú)</span>}</div>
             <div className="meta">{c.correo}</div>
             {c.syncStatus==="pending" && <div style={{marginTop:8}}><span className="badge pending">Cuenta sin sincronizar aún</span></div>}
             {c.syncError && <div style={{fontSize:12.5, color:"var(--danger)", marginTop:8}}>Error al sincronizar: {c.syncError}</div>}
-            <button className="btn btn-ghost" style={{marginTop:12}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Editar</button>
+            <div style={{display:"flex", gap:10, marginTop:12}}>
+              <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setSeleccionado(c); setErr(""); setVista("editar");}}>Editar</button>
+              {!esYo && (confirmarBorrado===c.id ? (
+                <button className="btn btn-primary" style={{flex:1, background:"var(--danger)", boxShadow:"none"}} onClick={()=>eliminar(c.id)}>Confirmar</button>
+              ) : (
+                <button className="btn btn-ghost" style={{flex:1, color:"var(--danger)", borderColor:"var(--danger)"}} onClick={()=>setConfirmarBorrado(c.id)}>Eliminar</button>
+              ))}
+            </div>
           </div>
-        ))}
-        <p className="footnote">Las cuentas de Administrador son fijas (3) y solo pueden editarse entre sí; no se crean ni eliminan desde aquí. Si ves "Cuenta sin sincronizar aún", conéctate a internet un momento — se envía sola.</p>
+          );
+        })}
+        <p className="footnote">Cualquier Administrador puede crear, editar o eliminar otras cuentas de Administrador (menos la propia, con la que iniciaste sesión) — siempre debe quedar al menos una. Si ves "Cuenta sin sincronizar aún", conéctate a internet un momento — se envía sola.</p>
       </div>
     </div>
   );
@@ -1292,7 +1325,8 @@ function App(){
     const actuales = await storeGet("colaboradores", []);
     if(actuales.some(c=>c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe un usuario con ese correo."); }
     const passwordHash = await sha256(datos.password);
-    const nuevo = {id:uid("col"), correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash, tipo:"Colaborador de campo", syncStatus:"pending", correoAnterior:datos.correo};
+    const tipo = datos.tipo==="Administrador" ? "Administrador" : "Colaborador de campo";
+    const nuevo = {id:uid("col"), correo:datos.correo, nombre:datos.nombre, apellido:datos.apellido, cedula:datos.cedula, celular:datos.celular, passwordHash, tipo, syncStatus:"pending", correoAnterior:datos.correo};
     const actualizados = [...actuales, nuevo];
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
@@ -1317,7 +1351,14 @@ function App(){
   const onEliminarColaborador = async (id)=>{
     const actuales = await storeGet("colaboradores", []);
     const objetivo = actuales.find(c=>c.id===id);
-    if(!objetivo || objetivo.tipo==="Administrador") return; // las cuentas de admin no se eliminan
+    if(!objetivo) return;
+    if(session && objetivo.id===session.id){
+      throw new Error("No puedes eliminar la cuenta con la que iniciaste sesión. Pide a otro Administrador que la elimine.");
+    }
+    if(objetivo.tipo==="Administrador"){
+      const totalAdmins = actuales.filter(c=>c.tipo==="Administrador").length;
+      if(totalAdmins<=1){ throw new Error("Debe quedar al menos un Administrador; no se puede eliminar el último."); }
+    }
     const actualizados = actuales.filter(c=>c.id!==id);
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
@@ -1344,7 +1385,7 @@ function App(){
       {screen==="confirmacion" && session && <Confirmacion goto={goto} session={session}/>}
       {screen==="admin-home" && session && <AdminHome queue={queue} colaboradores={colaboradores} online={online}/>}
       {screen==="admin-reportes" && session && <AdminReportes queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote}/>}
-      {screen==="admin-usuarios" && session && <AdminUsuarios queue={queue} colaboradores={colaboradores} online={online} onRefreshRemote={onRefreshRemote} onCrear={onCrearColaborador} onEditar={onEditarColaborador} onEliminar={onEliminarColaborador}/>}
+      {screen==="admin-usuarios" && session && <AdminUsuarios queue={queue} colaboradores={colaboradores} online={online} session={session} onRefreshRemote={onRefreshRemote} onCrear={onCrearColaborador} onEditar={onEditarColaborador} onEliminar={onEliminarColaborador}/>}
       {screen==="cuenta" && session && <CuentaScreen session={session} goto={goto} onLogout={onLogout} install={install}/>}
       {showBottomNav && <BottomNav role={session.tipo} screen={screen} goto={goto}/>}
     </div>
