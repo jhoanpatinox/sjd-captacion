@@ -505,7 +505,7 @@ function Landing({goto, install}){
    la lista de colaboradores desde el Sheets (onRefrescar) para que un
    dispositivo que nunca ha usado esta cuenta reciba la contraseña más
    reciente en vez de fallar por no tenerla guardada localmente. */
-function ColabAuth({goto, onLogin, onRefrescar, onSincronizar, colaboradores, onCrearPrimerAdmin}){
+function ColabAuth({goto, onLogin, onRefrescar, onSincronizar, colaboradores, onCrearPrimerAdmin, onResetLocal}){
   const [mode, setMode] = useState("login");
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -574,6 +574,16 @@ function ColabAuth({goto, onLogin, onRefrescar, onSincronizar, colaboradores, on
     catch(e){ setErr(e.message || "No se pudo crear el Administrador."); setLoading(false); }
   };
 
+  const [reseteando, setReseteando] = useState(false);
+  const doResetLocal = async ()=>{
+    if(!window.confirm("Esto borra, solo en este celular, la lista guardada de usuarios (no toca el Google Sheets) y vuelve a traer la lista real desde ahí. Úsalo si la app no te deja crear el primer Administrador aunque el Sheets ya esté vacío. ¿Continuar?")) return;
+    setReseteando(true); setErr(""); setOkMsg("");
+    try{
+      await onResetLocal();
+      setOkMsg("Datos locales restablecidos. Si el Sheets está vacío, ya debería aparecer la opción de configurar el primer Administrador.");
+    } finally { setReseteando(false); }
+  };
+
   return (
     <div>
       <Header title={mode==="reset" ? "Restablecer contraseña" : mode==="primerAdmin" ? "Configuración inicial" : "Acceso Colaborador"} onBack={()=>mode!=="login" ? setMode("login") : goto("landing")}/>
@@ -634,6 +644,13 @@ function ColabAuth({goto, onLogin, onRefrescar, onSincronizar, colaboradores, on
           )
         )}
         <p className="footnote">Las cuentas de colaborador y administrador son creadas y administradas por el equipo de Administración.</p>
+        {mode==="login" && (
+          <p className="footnote">
+            <button type="button" className="btn-text" disabled={reseteando} onClick={doResetLocal}>
+              {reseteando ? "Restableciendo…" : "¿No aparece la opción de configurar el primer Administrador? Toca aquí"}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1476,6 +1493,19 @@ function App(){
     onLogin(nuevo);
   };
 
+  /* Borra la copia local (de este dispositivo) de la lista de colaboradores.
+     Sirve para el caso en que el Sheets ya está vacío (se borraron las
+     filas) pero este celular todavía "recuerda" usuarios de pruebas
+     anteriores, y por eso no ofrece la opción de crear el primer
+     Administrador. Después de borrar, intenta traer la lista real desde el
+     Sheets (si hay conexión) para quedar sincronizado con la verdad actual. */
+  const onResetColaboradoresLocal = async ()=>{
+    await storeSet("colaboradores", []);
+    await storeSet("colaboradores_pendientes_eliminar", []);
+    setColaboradores([]);
+    if(navigator.onLine) await fetchColaboradoresRemote();
+  };
+
   const onEditarColaborador = async (id, datos)=>{
     const actuales = await storeGet("colaboradores", []);
     if(actuales.some(c=>c.id!==id && c.correo.toLowerCase()===datos.correo.toLowerCase())){ throw new Error("Ya existe otro usuario con ese correo."); }
@@ -1521,7 +1551,7 @@ function App(){
   return (
     <div className="app-shell">
       {screen==="landing" && <Landing goto={goto} install={install}/>}
-      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote} onSincronizar={trySyncColaboradores} colaboradores={colaboradores} onCrearPrimerAdmin={onCrearPrimerAdmin}/>}
+      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote} onSincronizar={trySyncColaboradores} colaboradores={colaboradores} onCrearPrimerAdmin={onCrearPrimerAdmin} onResetLocal={onResetColaboradoresLocal}/>}
       {screen==="colab-home" && session && <ColabHome session={session} goto={goto} queue={queue} online={online}/>}
       {screen==="colab-historial" && session && <ColabHistorial session={session} goto={goto} queue={queue} online={online} syncing={syncing} onSync={onSync}/>}
       {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
