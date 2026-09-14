@@ -505,23 +505,32 @@ function Landing({goto, install}){
    la lista de colaboradores desde el Sheets (onRefrescar) para que un
    dispositivo que nunca ha usado esta cuenta reciba la contraseña más
    reciente en vez de fallar por no tenerla guardada localmente. */
-function ColabAuth({goto, onLogin, onRefrescar, onSincronizar}){
+function ColabAuth({goto, onLogin, onRefrescar, onSincronizar, colaboradores, onCrearPrimerAdmin}){
   const [mode, setMode] = useState("login");
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({correo:"",password:""});
   const [resetForm, setResetForm] = useState({correo:"",cedula:"",password:"",password2:""});
+  const [primerForm, setPrimerForm] = useState({correo:"",nombre:"",apellido:"",cedula:"",celular:"",password:"",password2:""});
   const set = (k)=>(e)=>setForm(f=>({...f,[k]:e.target.value}));
   const setReset = (k)=>(e)=>setResetForm(f=>({...f,[k]:e.target.value}));
+  const setPrimer = (k)=>(e)=>setPrimerForm(f=>({...f,[k]:e.target.value}));
+  const setPrimerDigits = (k, max)=>(e)=>setPrimerForm(f=>({...f,[k]:onlyDigits(e.target.value, max)}));
+  const sistemaVacio = colaboradores.length===0;
+
+  // Al entrar a esta pantalla, se refresca la lista de colaboradores contra
+  // el Sheets (si hay conexión) para saber con certeza si el sistema está
+  // vacío antes de ofrecer la opción de crear el primer Administrador.
+  useEffect(()=>{ if(navigator.onLine && onRefrescar) onRefrescar().catch(()=>{}); },[]);
 
   const doLogin = async ()=>{
     setErr(""); setLoading(true);
     try{
       if(navigator.onLine){ await onRefrescar().catch(()=>{}); }
-      const colaboradores = await storeGet("colaboradores", []);
+      const colaboradoresLocal = await storeGet("colaboradores", []);
       const hash = await sha256(form.password);
-      const found = colaboradores.find(c=>c.correo.toLowerCase()===form.correo.toLowerCase() && c.passwordHash===hash);
+      const found = colaboradoresLocal.find(c=>c.correo.toLowerCase()===form.correo.toLowerCase() && c.passwordHash===hash);
       if(!found){ setErr("Correo o contraseña incorrectos."); setLoading(false); return; }
       onLogin(found);
     } finally { setLoading(false); }
@@ -534,8 +543,8 @@ function ColabAuth({goto, onLogin, onRefrescar, onSincronizar}){
     setLoading(true);
     try{
       if(navigator.onLine){ await onRefrescar().catch(()=>{}); }
-      const colaboradores = await storeGet("colaboradores", []);
-      const idx = colaboradores.findIndex(c=>c.correo.toLowerCase()===resetForm.correo.toLowerCase() && c.cedula===resetForm.cedula);
+      const colaboradoresLocal = await storeGet("colaboradores", []);
+      const idx = colaboradoresLocal.findIndex(c=>c.correo.toLowerCase()===resetForm.correo.toLowerCase() && c.cedula===resetForm.cedula);
       if(idx===-1){
         setErr(navigator.onLine
           ? "No se encontró una cuenta con ese correo y cédula. Verifica que estén escritos igual que los registró el Administrador."
@@ -543,23 +552,31 @@ function ColabAuth({goto, onLogin, onRefrescar, onSincronizar}){
         setLoading(false); return;
       }
       const passwordHash = await sha256(resetForm.password);
-      const actualizados = colaboradores.map((c,i)=> i===idx ? {...c, passwordHash, syncStatus:"pending", correoAnterior: c.correoAnterior || c.correo} : c);
+      const actualizados = colaboradoresLocal.map((c,i)=> i===idx ? {...c, passwordHash, syncStatus:"pending", correoAnterior: c.correoAnterior || c.correo} : c);
       await storeSet("colaboradores", actualizados);
-      // Empuja la contraseña nueva al Sheets con el mismo mecanismo de
-      // reintento que usa el resto de la app (trySyncColaboradores): si en
-      // este momento no hay conexión o falla el envío, queda marcada como
-      // pendiente y se reintenta sola apenas vuelva la conexión — no se
-      // pierde en silencio como antes.
       if(onSincronizar) await onSincronizar();
       setOkMsg("Contraseña actualizada. Ya puedes iniciar sesión.");
       setResetForm({correo:"",cedula:"",password:"",password2:""});
       setMode("login");
     } finally { setLoading(false); }
   };
+  const doCrearPrimerAdmin = async ()=>{
+    setErr("");
+    const f = primerForm;
+    if(!f.correo || !f.nombre || !f.apellido || !f.cedula || !f.celular || !f.password){ setErr("Completa todos los campos."); return; }
+    if(!isValidEmail(f.correo)){ setErr("Ingresa un correo electrónico válido."); return; }
+    if(!isTenDigits(f.cedula)){ setErr("La cédula debe tener 10 dígitos numéricos."); return; }
+    if(!isTenDigits(f.celular)){ setErr("El celular debe tener 10 dígitos numéricos."); return; }
+    if(f.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
+    if(f.password!==f.password2){ setErr("Las contraseñas no coinciden."); return; }
+    setLoading(true);
+    try{ await onCrearPrimerAdmin(f); }
+    catch(e){ setErr(e.message || "No se pudo crear el Administrador."); setLoading(false); }
+  };
 
   return (
     <div>
-      <Header title={mode==="reset" ? "Restablecer contraseña" : "Acceso Colaborador"} onBack={()=>mode==="reset" ? setMode("login") : goto("landing")}/>
+      <Header title={mode==="reset" ? "Restablecer contraseña" : mode==="primerAdmin" ? "Configuración inicial" : "Acceso Colaborador"} onBack={()=>mode!=="login" ? setMode("login") : goto("landing")}/>
       <div className="content no-nav">
         {err && <div className="error-msg">{err}</div>}
         {okMsg && <div className="cashback-banner" style={{marginTop:0, marginBottom:16}}><IconStar/> {okMsg}</div>}
@@ -569,6 +586,13 @@ function ColabAuth({goto, onLogin, onRefrescar, onSincronizar}){
             <div className="field"><label className="req">Contraseña</label><input type="password" value={form.password} onChange={set("password")}/></div>
             <button className="btn btn-primary" disabled={loading} onClick={doLogin}>{loading?"Ingresando…":"Ingresar"}</button>
             <button type="button" className="btn-text" style={{alignSelf:"center"}} onClick={()=>{setMode("reset"); setErr(""); setOkMsg(""); setResetForm(f=>({...f, correo:form.correo}));}}>¿Olvidaste tu contraseña? Restablécela aquí</button>
+          </div>
+        )}
+        {mode==="login" && sistemaVacio && (
+          <div className="install-banner" style={{marginTop:16}}>
+            <IconUser/>
+            <div style={{flex:1, fontSize:13.5, color:"var(--ink-soft)"}}>Este sistema todavía no tiene ningún usuario registrado.</div>
+            <button className="btn btn-primary" style={{width:"auto", padding:"10px 16px", fontSize:13.5}} onClick={()=>{setMode("primerAdmin"); setErr("");}}>Configurar</button>
           </div>
         )}
         {mode==="reset" && (
@@ -582,6 +606,32 @@ function ColabAuth({goto, onLogin, onRefrescar, onSincronizar}){
             </div>
             <button className="btn btn-primary" disabled={loading} onClick={doReset}>{loading?"Actualizando…":"Restablecer contraseña"}</button>
           </div>
+        )}
+        {mode==="primerAdmin" && (
+          sistemaVacio ? (
+            <div className="card stack">
+              <p className="hint" style={{marginBottom:4}}>Crea la primera cuenta de Administrador del sistema. Esta opción desaparece en cuanto exista al menos un usuario registrado.</p>
+              <div className="field"><label className="req">Correo institucional</label><input type="email" value={primerForm.correo} onChange={setPrimer("correo")} placeholder="nombre@sanjuandedios.ec"/></div>
+              <div className="row2">
+                <div className="field"><label className="req">Nombre</label><input type="text" value={primerForm.nombre} onChange={setPrimer("nombre")}/></div>
+                <div className="field"><label className="req">Apellido</label><input type="text" value={primerForm.apellido} onChange={setPrimer("apellido")}/></div>
+              </div>
+              <div className="row2">
+                <div className="field"><label className="req">Cédula</label><input type="text" inputMode="numeric" placeholder="10 dígitos" value={primerForm.cedula} onChange={setPrimerDigits("cedula",10)}/></div>
+                <div className="field"><label className="req">Celular</label><input type="tel" inputMode="numeric" placeholder="10 dígitos" value={primerForm.celular} onChange={setPrimerDigits("celular",10)}/></div>
+              </div>
+              <div className="row2">
+                <div className="field"><label className="req">Contraseña</label><input type="password" value={primerForm.password} onChange={setPrimer("password")}/></div>
+                <div className="field"><label className="req">Confirmar</label><input type="password" value={primerForm.password2} onChange={setPrimer("password2")}/></div>
+              </div>
+              <button className="btn btn-primary" disabled={loading} onClick={doCrearPrimerAdmin}>{loading?"Creando…":"Crear primer Administrador"}</button>
+            </div>
+          ) : (
+            <div className="card stack">
+              <p className="hint">Ya existe al menos un usuario registrado en el sistema, así que esta opción ya no está disponible. Pide a un Administrador que te cree la cuenta desde "Usuarios".</p>
+              <button className="btn btn-ghost" onClick={()=>setMode("login")}>Volver a iniciar sesión</button>
+            </div>
+          )
         )}
         <p className="footnote">Las cuentas de colaborador y administrador son creadas y administradas por el equipo de Administración.</p>
       </div>
@@ -1411,6 +1461,19 @@ function App(){
     setColaboradores(actualizados);
     await storeSet("colaboradores", actualizados);
     await trySyncColaboradores();
+    return nuevo;
+  };
+
+  /* ===== Arranque inicial: primer Administrador =====
+     Solo se puede usar mientras NO existe ningún usuario en el sistema
+     (colaboradores.length===0, verificado contra el Sheets al entrar a
+     "Acceso Colaborador"). En cuanto se crea el primer Administrador, esta
+     vía deja de estar disponible — a partir de ahí, solo un Administrador
+     ya autenticado puede crear cuentas nuevas desde "Usuarios". */
+  const onCrearPrimerAdmin = async (datos)=>{
+    if(colaboradores.length>0){ throw new Error("Ya existe al menos un usuario registrado; pide a un Administrador que te cree la cuenta desde Usuarios."); }
+    const nuevo = await onCrearColaborador({...datos, tipo:"Administrador"});
+    onLogin(nuevo);
   };
 
   const onEditarColaborador = async (id, datos)=>{
@@ -1458,7 +1521,7 @@ function App(){
   return (
     <div className="app-shell">
       {screen==="landing" && <Landing goto={goto} install={install}/>}
-      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote} onSincronizar={trySyncColaboradores}/>}
+      {screen==="colab-auth" && <ColabAuth goto={goto} onLogin={onLogin} onRefrescar={fetchColaboradoresRemote} onSincronizar={trySyncColaboradores} colaboradores={colaboradores} onCrearPrimerAdmin={onCrearPrimerAdmin}/>}
       {screen==="colab-home" && session && <ColabHome session={session} goto={goto} queue={queue} online={online}/>}
       {screen==="colab-historial" && session && <ColabHistorial session={session} goto={goto} queue={queue} online={online} syncing={syncing} onSync={onSync}/>}
       {screen==="nueva-donacion" && session && <NuevaDonacion session={session} goto={goto} onGuardado={onGuardado}/>}
