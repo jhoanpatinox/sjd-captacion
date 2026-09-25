@@ -957,25 +957,6 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
     ? (rangoDesde||rangoHasta ? ((rangoDesde||"…") + " a " + (rangoHasta||"…")) : "todo el historial")
     : filtroFecha;
 
-  const descargarInforme = ()=>{
-    const headers = ["Número de autorización única de débito","Nombre de Colaborador","Fecha de Captación","Lugar de Captación","Nombre Donador","Cédula de Donador","Email","Teléfono","Celular","Fecha de nacimiento","Dirección","Número cuenta bancaria","Banco","Ahorros/Corriente","Número de tarjeta","Marca de Tarjeta","Fecha de expiración","Frecuencia de débito","Cantidad a debitar","Aceptación","Firma del donante (enlace)"];
-    const rows = filtrados.map(r=>[r.numeroAutorizacion,r.nombreColaborador,r.fechaCaptacion,r.lugarCaptacion,r.nombreDonador,r.cedulaDonador,r.email,r.telefono,r.celular,r.fechaNacimiento,r.direccion,r.numeroCuenta,r.banco,r.tipoCuenta,r.numeroTarjeta,r.marcaTarjeta,r.fechaExpiracion,r.frecuencia,r.cantidad,r.aceptacion,r.firmaUrl||""]);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    // Columnas con ceros a la izquierda o formato especial (A, F, H, I, L, O, Q):
-    // se fuerzan como texto para que Excel no las reinterprete como número o fecha.
-    const colsTexto = [0,5,7,8,11,14,16];
-    const range = XLSX.utils.decode_range(ws["!ref"]);
-    for(let R=1; R<=range.e.r; R++){
-      colsTexto.forEach(C=>{
-        const addr = XLSX.utils.encode_cell({r:R, c:C});
-        if(ws[addr]){ ws[addr].t = "s"; ws[addr].z = "@"; }
-      });
-    }
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Donaciones");
-    XLSX.writeFile(wb, "Informe_Donaciones_" + todayISO() + ".xlsx");
-  };
-
   const [generandoInforme, setGenerandoInforme] = useState(false);
   const descargarInformeConFirmas = async ()=>{
     const numeros = filtrados.map(r=>r.numeroAutorizacion).filter(Boolean);
@@ -1022,13 +1003,12 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
             </div>
           )}
         </div>
-        <div className="fab-space"><button className="btn btn-gold" onClick={descargarInforme}><IconDownload/> Descargar informe (Excel)</button></div>
-        <div className="hint" style={{marginTop:6}}>Este informe incluye el enlace a cada firma, pero no la imagen. El botón de abajo genera, con el mismo filtro de arriba, un Excel con las imágenes de firma ya incluidas (toma unos segundos).</div>
-        <div style={{marginTop:10}}>
-          <button className="btn btn-ghost" disabled={generandoInforme} onClick={descargarInformeConFirmas}>
-            <IconDownload/> {generandoInforme ? "Generando informe…" : "Descargar informe con firmas (Excel)"}
+        <div className="fab-space">
+          <button className="btn btn-gold" disabled={generandoInforme} onClick={descargarInformeConFirmas}>
+            <IconDownload/> {generandoInforme ? "Generando informe…" : "Descargar informe (Excel)"}
           </button>
         </div>
+        <div className="hint" style={{marginTop:6}}>Incluye solo los registros dentro del filtro de arriba, con la imagen de cada firma ya incorporada (toma unos segundos en generarse).</div>
         <div style={{marginTop:12}}>
           <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar desde Sheets</button>
         </div>
