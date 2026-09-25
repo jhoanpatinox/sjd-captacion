@@ -237,6 +237,7 @@ const {useState, useEffect, useMemo, useCallback} = React;
    ========================================================================= */
 const CONFIG = {
   API_URL: "https://script.google.com/macros/s/AKfycbwWe9Xs3HT-fhGG0jV_Su_KHHDzVErs-9xRd5wrw4ZK4FwtCK6MtF_ftZbHvBHrGPku/exec",
+  SHEETS_ID: "13XwOiUCTIKZx9F18afGhcqDfSU-30tU6aF4bMXReBNY",
 };
 
 const BANCOS_ECUADOR = [
@@ -975,6 +976,21 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
     XLSX.writeFile(wb, "Informe_Donaciones_" + todayISO() + ".xlsx");
   };
 
+  const [generandoInforme, setGenerandoInforme] = useState(false);
+  const descargarInformeConFirmas = async ()=>{
+    const numeros = filtrados.map(r=>r.numeroAutorizacion).filter(Boolean);
+    if(numeros.length===0){ alert("No hay registros sincronizados con número de autorización en el filtro actual."); return; }
+    setGenerandoInforme(true);
+    try{
+      const data = await apiPost("generarInformeConFirmas", {numeros});
+      window.location.href = data.url;
+    }catch(e){
+      alert("No se pudo generar el informe con firmas: " + (e.message||"error desconocido"));
+    }finally{
+      setGenerandoInforme(false);
+    }
+  };
+
   return (
     <div>
       <Header title="Reportes" subtitle="Filtra y exporta la captación" online={online} showConn/>
@@ -1007,6 +1023,12 @@ function AdminReportes({queue, colaboradores, online, onRefreshRemote}){
           )}
         </div>
         <div className="fab-space"><button className="btn btn-gold" onClick={descargarInforme}><IconDownload/> Descargar informe (Excel)</button></div>
+        <div className="hint" style={{marginTop:6}}>Este informe incluye el enlace a cada firma, pero no la imagen. El botón de abajo genera, con el mismo filtro de arriba, un Excel con las imágenes de firma ya incluidas (toma unos segundos).</div>
+        <div style={{marginTop:10}}>
+          <button className="btn btn-ghost" disabled={generandoInforme} onClick={descargarInformeConFirmas}>
+            <IconDownload/> {generandoInforme ? "Generando informe…" : "Descargar informe con firmas (Excel)"}
+          </button>
+        </div>
         <div style={{marginTop:12}}>
           <button className="btn btn-ghost" disabled={!online} onClick={onRefreshRemote}>Actualizar desde Sheets</button>
         </div>
