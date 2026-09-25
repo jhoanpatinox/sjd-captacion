@@ -342,9 +342,43 @@ function Seal({size=84}){ return <div className="seal-badge" style={{width:size,
 
 /* ========================= Pad de firma (firma electrónica simple) ========================= */
 function SignaturePad({value, onChange}){
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      {value ? (
+        <div style={{border:"1.5px solid var(--border)", borderRadius:"var(--radius-sm)", padding:8, background:"#fff"}}>
+          <img src={value} alt="Firma del donante" style={{width:"100%", height:100, objectFit:"contain", display:"block"}}/>
+        </div>
+      ) : (
+        <button type="button" onClick={()=>setOpen(true)}
+          style={{width:"100%", height:100, background:"#fff", border:"1.5px dashed var(--border)", borderRadius:"var(--radius-sm)", color:"var(--ink-faint)", fontFamily:"var(--font-body)", fontWeight:700, cursor:"pointer"}}>
+          Toca para firmar
+        </button>
+      )}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8}}>
+        <span className="hint">{value ? "Firma capturada ✓" : "Se abrirá a pantalla completa para firmar con más espacio"}</span>
+        <button type="button" className="btn-text" onClick={()=>setOpen(true)}>{value ? "Volver a firmar" : "Firmar"}</button>
+      </div>
+      {open && (
+        <SignatureModal
+          initial={value}
+          onCancel={()=>setOpen(false)}
+          onSave={(dataUrl)=>{ onChange(dataUrl); setOpen(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Recuadro de firma a pantalla completa: cubre todo el viewport (celular o
+   escritorio) para que el donante tenga el mayor espacio horizontal posible
+   al firmar, con botones para borrar y volver a empezar, o guardar cuando
+   esté conforme. */
+function SignatureModal({initial, onCancel, onSave}){
   const canvasRef = React.useRef(null);
   const drawing = React.useRef(false);
   const lastPos = React.useRef(null);
+  const [vacio, setVacio] = useState(!initial);
 
   const getCtx = ()=>canvasRef.current.getContext("2d");
 
@@ -356,10 +390,15 @@ function SignaturePad({value, onChange}){
     canvas.height = rect.height * ratio;
     const ctx = getCtx();
     ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.6;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#16283A";
+    if(initial){
+      const img = new Image();
+      img.onload = ()=>{ ctx.drawImage(img, 0, 0, rect.width, rect.height); };
+      img.src = initial;
+    }
   },[]);
 
   const posFromEvent = (e)=>{
@@ -367,12 +406,7 @@ function SignaturePad({value, onChange}){
     const point = e.touches ? e.touches[0] : e;
     return {x: point.clientX - rect.left, y: point.clientY - rect.top};
   };
-
-  const start = (e)=>{
-    e.preventDefault();
-    drawing.current = true;
-    lastPos.current = posFromEvent(e);
-  };
+  const start = (e)=>{ e.preventDefault(); drawing.current = true; lastPos.current = posFromEvent(e); };
   const move = (e)=>{
     if(!drawing.current) return;
     e.preventDefault();
@@ -383,29 +417,33 @@ function SignaturePad({value, onChange}){
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
     lastPos.current = pos;
+    setVacio(false);
   };
-  const end = ()=>{
-    if(!drawing.current) return;
-    drawing.current = false;
-    onChange(canvasRef.current.toDataURL("image/png"));
-  };
+  const end = ()=>{ drawing.current = false; };
   const limpiar = ()=>{
     const canvas = canvasRef.current;
-    const ctx = getCtx();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    onChange("");
+    getCtx().clearRect(0, 0, canvas.width, canvas.height);
+    setVacio(true);
   };
+  const guardar = ()=>{ if(!vacio) onSave(canvasRef.current.toDataURL("image/png")); };
 
   return (
-    <div>
-      <canvas ref={canvasRef}
-        style={{width:"100%", height:160, background:"#fff", border:"1.5px solid var(--border)", borderRadius:"var(--radius-sm)", touchAction:"none"}}
-        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
-        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
-      />
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8}}>
-        <span className="hint">{value ? "Firma capturada ✓" : "Firme con el dedo o el mouse en el recuadro"}</span>
-        <button type="button" className="btn-text" onClick={limpiar}>Borrar firma</button>
+    <div style={{position:"fixed", inset:0, background:"#fff", zIndex:200, display:"flex", flexDirection:"column"}}>
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid var(--border)", paddingTop:"calc(14px + env(safe-area-inset-top, 0px))"}}>
+        <strong style={{fontFamily:"var(--font-display)", color:"var(--navy)", fontSize:17}}>Firma del donante</strong>
+        <button type="button" className="btn-text" onClick={onCancel}>Cancelar</button>
+      </div>
+      <div style={{flex:1, padding:16, display:"flex", flexDirection:"column", minHeight:0}}>
+        <canvas ref={canvasRef}
+          style={{flex:1, width:"100%", background:"#fff", border:"1.5px dashed var(--border)", borderRadius:"var(--radius)", touchAction:"none"}}
+          onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+          onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+        />
+        <p className="hint" style={{textAlign:"center", marginTop:10}}>Gira el celular en horizontal antes de firmar si quieres más espacio.</p>
+      </div>
+      <div style={{display:"flex", gap:12, padding:16, paddingBottom:"calc(16px + env(safe-area-inset-bottom, 0px))", borderTop:"1px solid var(--border)"}}>
+        <button type="button" className="btn btn-ghost" style={{flex:1}} onClick={limpiar}>Borrar y empezar de nuevo</button>
+        <button type="button" className="btn btn-primary" style={{flex:1}} disabled={vacio} onClick={guardar}>Guardar firma</button>
       </div>
     </div>
   );
